@@ -17,8 +17,16 @@ function sessionTitle(s: Session): string {
   return s.title || s.id.slice(0, 8);
 }
 
+function shortModel(m: string): string {
+  const last = m.split("/").pop() || m;
+  return truncate(last, 24);
+}
+
 function sessionLabel(s: Session, i: number): string {
-  return `${i + 1}. ${truncate(sessionTitle(s), 40)} · ${relTime(s.updatedAt)}`;
+  const parts = [`${i + 1}. ${truncate(sessionTitle(s), 40)}`];
+  if (s.model) parts.push(shortModel(s.model));
+  parts.push(relTime(s.updatedAt));
+  return parts.join(" · ");
 }
 
 function panelText(s: Session): string {
@@ -164,8 +172,16 @@ export function createBot(
   // ---- commands ----
   bot.command("start", async (ctx) => {
     const a = active.get(ctx.chat.id);
-    const line = a ? `\n🎯 <b>${escapeHtml(sessionTitle(store.get(a) ?? { id: a, title: "" } as Session))}</b>` : "";
-    await ctx.reply(`👋 <b>Telecode</b>${line}`, {
+    const s = a ? store.get(a) : undefined;
+    const lines = ["👋 <b>Telecode</b>"];
+    if (s) {
+      lines.push(`🎯 <b>${escapeHtml(sessionTitle(s))}</b>`);
+      if (s.model) lines.push(`🧠 ${escapeHtml(shortModel(s.model))}`);
+      if (s.directory) lines.push(`📁 <code>${escapeHtml(s.directory)}</code>`);
+    } else {
+      lines.push("No active session.");
+    }
+    await ctx.reply(lines.join("\n"), {
       parse_mode: "HTML",
       reply_markup: new InlineKeyboard().text("📂 Sessions", "sessions").text("➕ New", "new"),
     });
