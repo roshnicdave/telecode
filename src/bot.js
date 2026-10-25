@@ -95,7 +95,6 @@ export function createBot(api, token, allowedIds = "") {
 
   // ---------- session list (buttons only) ----------
   async function showSessions(ctx, { edit = false, append = false } = {}) {
-    if (ctx.callbackQuery) await ctx.answerCallbackQuery().catch(() => {});
     const u = ui.get(ctx.chat.id) ?? { sessions: [], nextCursor: null, searching: false };
     u.searching = false;
     try {
@@ -288,11 +287,15 @@ export function createBot(api, token, allowedIds = "") {
   });
 
   // ---------- inline callbacks ----------
+  bot.on("callback_query:data", async (ctx, next) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    await next();
+  });
+
   bot.callbackQuery("sessions", (ctx) => showSessions(ctx, { edit: true }));
   bot.callbackQuery("loadmore", (ctx) => showSessions(ctx, { edit: true, append: true }));
 
   bot.callbackQuery("search", async (ctx) => {
-    await ctx.answerCallbackQuery().catch(() => {});
     const u = ui.get(ctx.chat.id) ?? { sessions: [], nextCursor: null, searching: false };
     u.searching = true;
     ui.set(ctx.chat.id, u);
@@ -300,29 +303,24 @@ export function createBot(api, token, allowedIds = "") {
   });
 
   bot.callbackQuery("new", async (ctx) => {
-    await ctx.answerCallbackQuery().catch(() => {});
     await newSession(ctx);
   });
 
   bot.callbackQuery("leave", async (ctx) => {
-    await ctx.answerCallbackQuery().catch(() => {});
     active.delete(ctx.chat.id);
     await ctx.reply("🚪");
   });
 
   bot.callbackQuery(/^open:(.+)$/, async (ctx) => {
-    await ctx.answerCallbackQuery().catch(() => {});
     await openSession(ctx, ctx.match[1], { edit: true });
   });
 
   bot.callbackQuery(/^refresh:(.+)$/, async (ctx) => {
-    await ctx.answerCallbackQuery().catch(() => {});
     await openSession(ctx, ctx.match[1], { edit: true });
   });
 
   bot.callbackQuery(/^view:(.+)$/, async (ctx) => {
     const id = ctx.match[1];
-    await ctx.answerCallbackQuery().catch(() => {});
     try {
       const msgs = await api.session.context({ sessionID: id });
       const blocks = msgs.slice(-24).flatMap(messageToBlocks);
@@ -335,7 +333,6 @@ export function createBot(api, token, allowedIds = "") {
 
   bot.callbackQuery(/^interrupt:(.+)$/, async (ctx) => {
     const id = ctx.match[1];
-    await ctx.answerCallbackQuery().catch(() => {});
     try {
       await api.session.interrupt({ sessionID: id });
       await ctx.reply("⏹");
@@ -346,7 +343,6 @@ export function createBot(api, token, allowedIds = "") {
 
   bot.callbackQuery(/^compact:(.+)$/, async (ctx) => {
     const id = ctx.match[1];
-    await ctx.answerCallbackQuery().catch(() => {});
     try {
       await api.session.compact({ sessionID: id });
       await ctx.reply("🧹");
@@ -357,14 +353,12 @@ export function createBot(api, token, allowedIds = "") {
 
   bot.callbackQuery(/^delete:(.+)$/, async (ctx) => {
     const id = ctx.match[1];
-    await ctx.answerCallbackQuery().catch(() => {});
     const kb = new InlineKeyboard().text("⚠️ Delete", `deleteok:${id}`).text("Cancel", `refresh:${id}`);
     await ctx.reply("🗑 Delete this session?", { reply_markup: kb });
   });
 
   bot.callbackQuery(/^deleteok:(.+)$/, async (ctx) => {
     const id = ctx.match[1];
-    await ctx.answerCallbackQuery().catch(() => {});
     try {
       await api.session.remove({ sessionID: id });
       if (active.get(ctx.chat.id)?.sessionId === id) active.delete(ctx.chat.id);
@@ -376,7 +370,6 @@ export function createBot(api, token, allowedIds = "") {
 
   bot.callbackQuery(/^export:(.+)$/, async (ctx) => {
     const id = ctx.match[1];
-    await ctx.answerCallbackQuery().catch(() => {});
     try {
       const info = await api.session.get({ sessionID: id });
       const messages = await api.session.context({ sessionID: id });
@@ -388,17 +381,14 @@ export function createBot(api, token, allowedIds = "") {
   });
 
   bot.callbackQuery(/^model:(.+)$/, async (ctx) => {
-    await ctx.answerCallbackQuery().catch(() => {});
     await picker(ctx, "model", ctx.match[1]);
   });
 
   bot.callbackQuery(/^agent:(.+)$/, async (ctx) => {
-    await ctx.answerCallbackQuery().catch(() => {});
     await picker(ctx, "agent", ctx.match[1]);
   });
 
   bot.callbackQuery(/^pick:(\d+)$/, async (ctx) => {
-    await ctx.answerCallbackQuery().catch(() => {});
     const p = pending.get(ctx.chat.id);
     if (!p || !p.items[Number(ctx.match[1])]) return;
     try {
