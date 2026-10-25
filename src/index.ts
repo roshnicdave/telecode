@@ -21,6 +21,8 @@ const DEFAULT_MODELS = [
   "cloudflare-workers-ai/@cf/qwen/qwen3.8-27b",
 ];
 
+const VERSION = "1.0.1";
+
 function dataDir(): string {
   if (process.env.TELECODE_DATA_DIR) return process.env.TELECODE_DATA_DIR;
   if (process.env.PLUGIN_DATA) return join(process.env.PLUGIN_DATA, "data");
@@ -43,11 +45,16 @@ async function main() {
   const allowedIds = process.env.TELEGRAM_ALLOWED_IDS ?? "";
   const modelList = models();
 
+  console.error(`[telecode] telecode v${VERSION}`);
+  console.error(`[telecode] store: ${dataDir()} (${store.list().length} sessions)`);
+  console.error(`[telecode] models: ${modelList.join(", ") || "none"}`);
+
   let handle: BotHandle;
   if (token) {
     handle = createBot(store, token, allowedIds, modelList);
+    console.error(`[telecode] telegram bot: enabled${allowedIds ? ` (allowed ids: ${allowedIds})` : " (allow all)"}`);
   } else {
-    console.error("[telecode] TELEGRAM_BOT_TOKEN not set; Telegram bot disabled.");
+    console.error("[telecode] telegram bot: disabled (TELEGRAM_BOT_TOKEN not set)");
     const stubBot = {
       api: {
         sendMessage: async () => {
@@ -59,7 +66,7 @@ async function main() {
   }
 
   const server = new Server(
-    { name: "telecode", version: "1.0.0" },
+    { name: "telecode", version: VERSION },
     { capabilities: { tools: {} } },
   );
   registerTools(server, store, handle);

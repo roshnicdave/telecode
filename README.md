@@ -1,5 +1,8 @@
 # telecode
 
+[![npm](https://img.shields.io/npm/v/@roshnicdave/telecode)](https://www.npmjs.com/package/@roshnicdave/telecode)
+[![GitHub](https://img.shields.io/github/stars/roshnicdave/telecode?style=social)](https://github.com/roshnicdave/telecode)
+
 Control your coding agent sessions from Telegram. `telecode` is an
 [Agent Plugins 1.0.0](https://agent-plugins.org) plugin: a portable
 **MCP server** plus a **skill**, so it works with any MCP-capable coding agent
@@ -66,6 +69,32 @@ Optional environment variables:
 | `TELEGRAM_ALLOWED_IDS` | Comma-separated numeric Telegram user ids to allow. Empty = allow all. |
 | `TELECODE_DATA_DIR` | Where sessions are stored. Defaults to `${PLUGIN_DATA}/data` or `~/.telecode`. |
 | `TELECODE_MODELS` | Comma-separated model list for the bot's model picker. |
+
+## Works with any MCP agent
+
+`telecode` speaks standard stdio MCP, so any MCP-capable harness can drive it —
+Claude Code, Cursor, VS Code, Pi, and others. Point the harness at the bundled
+server and set the two env vars:
+
+```json
+{
+  "mcpServers": {
+    "telecode": {
+      "command": "node",
+      "args": ["/path/to/node_modules/@roshnicdave/telecode/dist/index.cjs"],
+      "env": {
+        "TELEGRAM_BOT_TOKEN": "1234567890:AA-your-token",
+        "TELEGRAM_ALLOWED_IDS": "8010764520"
+      }
+    }
+  }
+}
+```
+
+- **Claude Code**: `claude mcp add telecode --env TELEGRAM_BOT_TOKEN=… --env TELEGRAM_ALLOWED_IDS=… -- node /path/to/dist/index.cjs`
+- **Cursor**: add the JSON above to `.cursor/mcp.json`
+- **VS Code**: add the JSON above to `.vscode/mcp.json`
+- **Pi**: add the JSON above to `~/.pi/agent/mcp.json`
 
 ## Development
 
