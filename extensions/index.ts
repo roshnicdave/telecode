@@ -1,4 +1,5 @@
 import {
+  existsSync,
   mkdirSync,
   readlinkSync,
   readFileSync,
@@ -8,6 +9,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { execFile } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
@@ -161,6 +163,27 @@ export function splitTelegram(text: string, limit = 4000): string[] {
   return chunks;
 }
 
+export function normalizeSessionName(value: string): string | undefined {
+  const name = value.trim().replace(/\s+/g, " ");
+  if (!name || name.length > 50 || !/^[A-Za-z0-9][A-Za-z0-9._ -]*$/.test(name)) return undefined;
+  return name;
+}
+
+function executable(envName: string, candidates: string[], fallback: string): string {
+  const configured = process.env[envName]?.trim();
+  if (configured) return configured;
+  return candidates.find(existsSync) ?? fallback;
+}
+
+function runFile(command: string, args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    execFile(command, args, { timeout: 5000 }, (error) => error ? reject(error) : resolve());
+  });
+}
+
+const wait = (milliseconds: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
+
 export default function telecode(pi: ExtensionAPI): void {
   const botToken = readSecret("TELEGRAM_BOT_TOKEN", ".telegram_token");
   const allowed = parseAllowedIds(readSecret("TELEGRAM_ALLOWED_IDS", ".telegram_allowed_ids"));
@@ -250,13 +273,50 @@ export default function telecode(pi: ExtensionAPI): void {
     }
   };
 
+  const createSession = async (chatId: number, requestedName: string): Promise<string> => {
+    const name = normalizeSessionName(requestedName);
+    if (!name) return "Use /new <name>. Names may be 1–50 letters, numbers, spaces, dots, dashes, or underscores.";
+
+    const before = liveSessions();
+    if (before.some((session) => session.name?.toLowerCase() === name.toLowerCase())) {
+      return `A live session named ${name} already exists. Use /sessions to select it.`;
+    }
+
+    const cwd = selectedSession(chatId)?.cwd ?? homedir();
+    const knownIds = new Set(before.map((session) => session.id));
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30) || "pi";
+    const tmuxSession = `telecode-${slug}-${Date.now().toString(36)}`;
+    const tmux = executable("TELECODE_TMUX_BINARY", ["/opt/homebrew/bin/tmux", "/usr/bin/tmux"], "tmux");
+    const piCommand = executable("TELECODE_PI_BINARY", [join(homedir(), ".local", "bin", "pi")], "pi");
+
+    try {
+      await runFile(tmux, ["new-session", "-d", "-s", tmuxSession, "-c", cwd, piCommand, "--name", name]);
+    } catch {
+      return "Could not start Pi. Telecode needs tmux and the pi command installed on this computer.";
+    }
+
+    for (let attempt = 0; attempt < 40; attempt++) {
+      await wait(250);
+      const created = liveSessions().find((session) => !knownIds.has(session.id) && session.name === name);
+      if (created) {
+        select(chatId, created.id);
+        return `Created and selected: ${label(created)}\n${created.cwd}`;
+      }
+    }
+    return `Pi was launched as ${name}, but it did not register within 10 seconds. Try /sessions in a moment.`;
+  };
+
   bot.command("start", async (ctx) => {
     if (!authorized(ctx.from?.id)) return;
     await ctx.reply("Telecode is connected. Use /sessions, choose a Pi session, then send it a message.");
   });
   bot.command("help", async (ctx) => {
     if (!authorized(ctx.from?.id)) return;
-    await ctx.reply("/sessions — list and select live Pi sessions\n/status — show the selected session\n/abort — stop its current turn\n\nAny other text is sent to the selected session.");
+    await ctx.reply("/new <name> — create and select a Pi session\n/sessions — list and select live Pi sessions\n/status — show the selected session\n/abort — stop its current turn\n\nAny other text is sent to the selected session.");
+  });
+  bot.command("new", async (ctx) => {
+    if (!authorized(ctx.from?.id)) return;
+    await ctx.reply(await createSession(ctx.chat.id, ctx.match));
   });
   bot.command("sessions", async (ctx) => {
     if (!authorized(ctx.from?.id)) return;
@@ -295,6 +355,7 @@ export default function telecode(pi: ExtensionAPI): void {
     if (polling || shuttingDown || !acquireLock()) return;
     polling = true;
     void bot.api.setMyCommands([
+      { command: "new", description: "Create and select a Pi session" },
       { command: "sessions", description: "List and select live Pi sessions" },
       { command: "status", description: "Show the selected Pi session" },
       { command: "abort", description: "Stop the selected session's current turn" },
