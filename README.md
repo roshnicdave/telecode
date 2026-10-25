@@ -68,7 +68,7 @@ Optional environment variables:
 | `TELEGRAM_BOT_TOKEN` | Telegram bot token (required for the bot). |
 | `TELEGRAM_ALLOWED_IDS` | Comma-separated numeric Telegram user ids to allow. Empty = allow all. |
 | `TELECODE_DATA_DIR` | Where sessions are stored. Defaults to `${PLUGIN_DATA}/data` or `~/.telecode`. |
-| `TELECODE_MODELS` | Comma-separated model list for the bot's model picker. |
+| `TELECODE_MODELS` | Comma-separated model list for the bot's model picker (empty by default). |
 
 ## Works with any MCP agent
 

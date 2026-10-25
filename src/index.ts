@@ -11,17 +11,11 @@ import { createBot, type BotHandle } from "./bot.js";
 import { Store } from "./store.js";
 import { registerTools } from "./tools.js";
 
-const DEFAULT_MODELS = [
-  "deepseek/deepseek-v4-pro",
-  "deepseek/deepseek-v4-flash",
-  "anthropic/claude-sonnet-4-5",
-  "anthropic/claude-opus-4-5",
-  "openai/gpt-5.4",
-  "google/gemini-3-pro",
-  "cloudflare-workers-ai/@cf/qwen/qwen3.8-27b",
-];
+// The bot's model picker lists these unless TELECODE_MODELS is set.
+// Keep it empty: each deployment should configure its own model list.
+const DEFAULT_MODELS: string[] = [];
 
-const VERSION = "1.0.1";
+const VERSION = "1.0.2";
 
 function dataDir(): string {
   if (process.env.TELECODE_DATA_DIR) return process.env.TELECODE_DATA_DIR;

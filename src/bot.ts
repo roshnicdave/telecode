@@ -301,6 +301,7 @@ export function createBot(
     const id = ctx.match[1];
     const s = store.get(id);
     if (!s) return ctx.reply(err(new Error("session not found")));
+    if (!models.length) return ctx.reply("No models configured. Set TELECODE_MODELS.", HTML);
     pendingModel.set(ctx.chat.id, { sessionId: id, items: models });
     const kb = new InlineKeyboard();
     models.slice(0, 30).forEach((m, i) => {

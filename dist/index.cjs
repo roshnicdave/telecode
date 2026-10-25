@@ -31622,6 +31622,7 @@ function createBot(store, token, allowedIds, models2) {
     const id = ctx.match[1];
     const s = store.get(id);
     if (!s) return ctx.reply(err(new Error("session not found")));
+    if (!models2.length) return ctx.reply("No models configured. Set TELECODE_MODELS.", HTML);
     pendingModel.set(ctx.chat.id, { sessionId: id, items: models2 });
     const kb = new import_grammy.InlineKeyboard();
     models2.slice(0, 30).forEach((m, i) => {
@@ -32060,16 +32061,8 @@ function resolveChatId(handle, chatId) {
 }
 
 // src/index.ts
-var DEFAULT_MODELS = [
-  "deepseek/deepseek-v4-pro",
-  "deepseek/deepseek-v4-flash",
-  "anthropic/claude-sonnet-4-5",
-  "anthropic/claude-opus-4-5",
-  "openai/gpt-5.4",
-  "google/gemini-3-pro",
-  "cloudflare-workers-ai/@cf/qwen/qwen3.8-27b"
-];
-var VERSION = "1.0.1";
+var DEFAULT_MODELS = [];
+var VERSION = "1.0.2";
 function dataDir() {
   if (process.env.TELECODE_DATA_DIR) return process.env.TELECODE_DATA_DIR;
   if (process.env.PLUGIN_DATA) return (0, import_node_path2.join)(process.env.PLUGIN_DATA, "data");
