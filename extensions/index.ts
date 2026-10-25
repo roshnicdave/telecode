@@ -7,6 +7,7 @@ import {
   renameSync,
   rmSync,
   symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { execFile } from "node:child_process";
@@ -34,6 +35,19 @@ type SessionRecord = {
   startedAt: number;
   lastActivity: number;
   heartbeat: number;
+  model?: ModelRecord;
+  models?: ModelRecord[];
+};
+
+type ModelRecord = {
+  provider: string;
+  id: string;
+  name: string;
+};
+
+type ModelState = {
+  current?: ModelRecord;
+  models: ModelRecord[];
 };
 
 function readSecret(envName: string, fileName: string): string {
@@ -80,25 +94,34 @@ function readJson<T>(path: string, fallback: T): T {
   }
 }
 
+function lockOwner(): number {
+  try {
+    return Number(readlinkSync(LOCK));
+  } catch {
+    try {
+      return Number(readFileSync(LOCK, "utf8").trim());
+    } catch {
+      return 0;
+    }
+  }
+}
+
 function acquireLock(): boolean {
   mkdirSync(DATA, { recursive: true });
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 4; attempt++) {
     try {
       symlinkSync(String(process.pid), LOCK);
       return true;
     } catch {
-      let owner = 0;
-      try {
-        owner = Number(readlinkSync(LOCK));
-      } catch {
+      const owner = lockOwner();
+      if (owner && processAlive(owner)) return owner === process.pid;
+      if (lockOwner() === owner) {
         try {
-          owner = Number(readFileSync(LOCK, "utf8").trim());
+          unlinkSync(LOCK);
         } catch {
-          // The lock disappeared between attempts.
+          // Another session already replaced or removed the stale lock.
         }
       }
-      if (owner && processAlive(owner)) return owner === process.pid;
-      rmSync(LOCK, { force: true });
     }
   }
   return false;
@@ -106,13 +129,7 @@ function acquireLock(): boolean {
 
 function releaseLock(): void {
   try {
-    let owner: number;
-    try {
-      owner = Number(readlinkSync(LOCK));
-    } catch {
-      owner = Number(readFileSync(LOCK, "utf8").trim());
-    }
-    if (owner === process.pid) rmSync(LOCK);
+    if (lockOwner() === process.pid) unlinkSync(LOCK);
   } catch {
     // Already released.
   }
@@ -136,6 +153,10 @@ function liveSessions(): SessionRecord[] {
 
 function label(session: SessionRecord): string {
   return `${session.name || basename(session.cwd) || "session"} · ${session.id.slice(0, 8)}${session.busy ? " · busy" : ""}`;
+}
+
+function modelLabel(model: ModelRecord): string {
+  return `${model.name} · ${model.provider}/${model.id}`;
 }
 
 export function assistantText(message: { role?: string; content?: unknown }): string {
@@ -193,6 +214,11 @@ export default function telecode(pi: ExtensionAPI): void {
   const bot = new Bot(botToken);
   const secret = randomBytes(18).toString("hex");
   const registryPath = join(SESSIONS, `${process.pid}.json`);
+  const cleanupFiles = (): void => {
+    rmSync(registryPath, { force: true });
+    releaseLock();
+  };
+  process.once("exit", cleanupFiles);
   let context: ExtensionContext | undefined;
   let server: Server | undefined;
   let port = 0;
@@ -218,6 +244,22 @@ export default function telecode(pi: ExtensionAPI): void {
     return sessions.find((session) => session.id === selected) ?? sessions[0];
   };
 
+  const availableModels = (): ModelRecord[] => {
+    if (!context) return [];
+    const models = context.scopedModels.length
+      ? context.scopedModels.map((item) => item.model)
+      : context.modelRegistry.getAvailable();
+    const unique = new Map<string, ModelRecord>();
+    for (const model of models) {
+      unique.set(`${model.provider}/${model.id}`, { provider: model.provider, id: model.id, name: model.name });
+    }
+    return [...unique.values()];
+  };
+  const currentModel = (): ModelRecord | undefined => context?.model
+    ? { provider: context.model.provider, id: context.model.id, name: context.model.name }
+    : undefined;
+  const localModelState = (): ModelState => ({ current: currentModel(), models: availableModels() });
+
   const saveRegistry = (): void => {
     if (!context || !port) return;
     writeJson(registryPath, {
@@ -231,6 +273,8 @@ export default function telecode(pi: ExtensionAPI): void {
       startedAt,
       lastActivity,
       heartbeat: Date.now(),
+      model: currentModel(),
+      models: availableModels(),
     } satisfies SessionRecord);
   };
 
@@ -273,6 +317,47 @@ export default function telecode(pi: ExtensionAPI): void {
     }
   };
 
+  const getModels = async (session: SessionRecord): Promise<ModelState | undefined> => {
+    try {
+      const response = await fetch(`http://127.0.0.1:${session.port}/models`, {
+        headers: { "x-telecode-secret": session.secret },
+        signal: AbortSignal.timeout(3000),
+      });
+      return response.ok ? await response.json() as ModelState : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const setModel = async (session: SessionRecord, model: ModelRecord): Promise<{ ok: boolean; message: string }> => {
+    try {
+      const response = await fetch(`http://127.0.0.1:${session.port}/model`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-telecode-secret": session.secret },
+        body: JSON.stringify({ provider: model.provider, id: model.id }),
+        signal: AbortSignal.timeout(5000),
+      });
+      const body = await response.json() as { message?: string };
+      return { ok: response.ok, message: body.message ?? (response.ok ? "Model changed." : "Could not change model.") };
+    } catch {
+      return { ok: false, message: "That Pi session stopped responding." };
+    }
+  };
+
+  const showModels = async (chatId: number): Promise<{ text: string; keyboard?: InlineKeyboard }> => {
+    const session = selectedSession(chatId);
+    if (!session) return { text: "No live Pi sessions. Create one with /new <name>." };
+    const state = await getModels(session);
+    if (!state?.models.length) return { text: "That session has no available models." };
+    const keyboard = new InlineKeyboard();
+    state.models.forEach((model, index) => {
+      const selected = state.current?.provider === model.provider && state.current.id === model.id;
+      keyboard.text(`${selected ? "✓ " : ""}${model.name}`, `model:${session.id}:${index}`).row();
+    });
+    const current = state.current ? modelLabel(state.current) : "none";
+    return { text: `Models for ${label(session)}\nCurrent: ${current}`, keyboard };
+  };
+
   const createSession = async (chatId: number, requestedName: string): Promise<string> => {
     const name = normalizeSessionName(requestedName);
     if (!name) return "Use /new <name>. Names may be 1–50 letters, numbers, spaces, dots, dashes, or underscores.";
@@ -312,7 +397,7 @@ export default function telecode(pi: ExtensionAPI): void {
   });
   bot.command("help", async (ctx) => {
     if (!authorized(ctx.from?.id)) return;
-    await ctx.reply("/new <name> — create and select a Pi session\n/sessions — list and select live Pi sessions\n/status — show the selected session\n/abort — stop its current turn\n\nAny other text is sent to the selected session.");
+    await ctx.reply("/new <name> — create and select a Pi session\n/sessions — list and select live Pi sessions\n/models — choose its model\n/model — show its current model\n/status — show the selected session\n/abort — stop its current turn\n\nAny other text is sent to the selected session.");
   });
   bot.command("new", async (ctx) => {
     if (!authorized(ctx.from?.id)) return;
@@ -331,6 +416,18 @@ export default function telecode(pi: ExtensionAPI): void {
     const session = selectedSession(ctx.chat.id);
     await ctx.reply(session ? `Selected: ${label(session)}\n${session.cwd}` : "No live Pi sessions.");
   });
+  bot.command("model", async (ctx) => {
+    if (!authorized(ctx.from?.id)) return;
+    const session = selectedSession(ctx.chat.id);
+    if (!session) return void await ctx.reply("No live Pi sessions.");
+    const state = await getModels(session);
+    await ctx.reply(state?.current ? `Current: ${modelLabel(state.current)}` : "That session has no active model.");
+  });
+  bot.command("models", async (ctx) => {
+    if (!authorized(ctx.from?.id)) return;
+    const result = await showModels(ctx.chat.id);
+    await ctx.reply(result.text, result.keyboard ? { reply_markup: result.keyboard } : undefined);
+  });
   bot.command("abort", async (ctx) => {
     if (!authorized(ctx.from?.id)) return;
     await ctx.reply(await abortSelected(ctx.chat.id));
@@ -342,6 +439,20 @@ export default function telecode(pi: ExtensionAPI): void {
     select(ctx.chat!.id, session.id);
     await ctx.answerCallbackQuery({ text: "Selected" });
     await ctx.editMessageText(`Selected: ${label(session)}\n${session.cwd}`);
+  });
+  bot.callbackQuery(/^model:([^:]+):(\d+)$/, async (ctx) => {
+    if (!authorized(ctx.from?.id)) return;
+    const session = liveSessions().find((item) => item.id === ctx.match[1]);
+    if (!session) return void await ctx.answerCallbackQuery({ text: "Session is no longer running." });
+    const state = await getModels(session);
+    const model = state?.models[Number(ctx.match[2])];
+    if (!model) return void await ctx.answerCallbackQuery({ text: "Model is no longer available." });
+    const result = await setModel(session, model);
+    await ctx.answerCallbackQuery({ text: result.message });
+    if (result.ok) {
+      const updated = await getModels(session);
+      await ctx.editMessageText(`Models for ${label(session)}\nCurrent: ${updated?.current ? modelLabel(updated.current) : modelLabel(model)}`);
+    }
   });
   bot.on("message:text", async (ctx) => {
     if (!authorized(ctx.from?.id) || ctx.message.text.startsWith("/")) return;
@@ -357,6 +468,8 @@ export default function telecode(pi: ExtensionAPI): void {
     void bot.api.setMyCommands([
       { command: "new", description: "Create and select a Pi session" },
       { command: "sessions", description: "List and select live Pi sessions" },
+      { command: "models", description: "Choose the selected session's model" },
+      { command: "model", description: "Show the selected session's model" },
       { command: "status", description: "Show the selected Pi session" },
       { command: "abort", description: "Stop the selected session's current turn" },
       { command: "help", description: "Show Telecode help" },
@@ -377,6 +490,44 @@ export default function telecode(pi: ExtensionAPI): void {
       if (request.method === "POST" && request.url === "/abort") {
         context?.abort();
         response.writeHead(202).end();
+        return;
+      }
+      if (request.method === "GET" && request.url === "/models") {
+        response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(localModelState()));
+        return;
+      }
+      if (request.method === "POST" && request.url === "/model") {
+        let body = "";
+        request.on("data", (chunk) => {
+          body += chunk;
+          if (body.length > 16_384) request.destroy();
+        });
+        request.on("end", () => {
+          void (async () => {
+            try {
+              const requested = JSON.parse(body) as { provider?: string; id?: string };
+              if (!context?.isIdle()) {
+                response.writeHead(409, { "content-type": "application/json" }).end(JSON.stringify({ message: "Wait for the current turn to finish first." }));
+                return;
+              }
+              const model = availableModels().find((item) => item.provider === requested.provider && item.id === requested.id);
+              const resolved = model && context.modelRegistry.find(model.provider, model.id);
+              if (!resolved) {
+                response.writeHead(404, { "content-type": "application/json" }).end(JSON.stringify({ message: "Model is not available in this session." }));
+                return;
+              }
+              if (!await pi.setModel(resolved)) {
+                response.writeHead(403, { "content-type": "application/json" }).end(JSON.stringify({ message: `No configured credentials for ${model.provider}.` }));
+                return;
+              }
+              lastActivity = Date.now();
+              saveRegistry();
+              response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ message: `Using ${model.name}.` }));
+            } catch {
+              response.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ message: "Invalid model request." }));
+            }
+          })();
+        });
         return;
       }
       if (request.method !== "POST" || request.url !== "/message") {
@@ -454,9 +605,9 @@ export default function telecode(pi: ExtensionAPI): void {
     shuttingDown = true;
     if (heartbeat) clearInterval(heartbeat);
     if (leaderCheck) clearInterval(leaderCheck);
-    rmSync(registryPath, { force: true });
     if (polling) await bot.stop().catch(() => {});
     await new Promise<void>((resolve) => server?.close(() => resolve()) ?? resolve());
-    releaseLock();
+    process.off("exit", cleanupFiles);
+    cleanupFiles();
   });
 }

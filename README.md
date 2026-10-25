@@ -35,6 +35,8 @@ Restart Pi after installation. In Telegram:
 
 - `/new <name>` starts a detached Pi session in the selected session's directory and selects it. If nothing is running yet, it starts in your home directory.
 - `/sessions` lists every running Pi session and lets you select one.
+- `/models` shows the selected session's enabled models as buttons and switches it immediately.
+- `/model` shows the selected session's current model.
 - `/status` shows the selected session.
 - `/abort` stops the selected session's current turn.
 - Any ordinary message is sent to the selected session.
