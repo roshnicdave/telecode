@@ -1,20 +1,25 @@
 # telecode
 
-Control your [OpenCode](https://opencode.ai) sessions from Telegram. Leave the
-computer running and drive any of your sessions from your phone — send messages,
-view history, interrupt, compact, switch model/agent, export, delete, create new.
+Control your [OpenCode](https://opencode.ai) sessions from Telegram. Runs as an
+**OpenCode plugin**, in-process with the OpenCode service — so it's up exactly
+when OpenCode is, and there's no separate process or HTTP hop.
+
+- List sessions (5 at a time, load more, search)
+- Open a session and just type to chat with it
+- View history, interrupt, compact, switch model/agent, export, delete, new
 
 ## How it works
 
-A tiny Node service sits between a Telegram bot and OpenCode's background
-service. It discovers and authenticates with the local OpenCode service via
-`@opencode/client/service` (auto-starting it if needed) and drives it over the
-HTTP API. The bot uses long polling, so there's no public URL or webhook to set up.
+OpenCode loads this plugin into its background service. The plugin starts a
+Telegram bot (grammY, long polling) and talks to your sessions directly through
+the in-process plugin API — no public URL, no webhook, no extra server.
+
+Lifecycle follows OpenCode: when the service starts, the bot starts; when it
+stops, the bot stops. (Keep the Mac awake — if it sleeps, everything pauses.)
 
 ## Requirements
 
-- Node.js 20.6+
-- [OpenCode](https://opencode.ai) installed and on your `PATH`
+- [OpenCode](https://opencode.ai) installed
 - A Telegram bot token from [@BotFather](https://t.me/BotFather)
 
 ## Setup
@@ -23,47 +28,37 @@ HTTP API. The bot uses long polling, so there's no public URL or webhook to set 
 git clone https://github.com/<you>/telecode
 cd telecode
 npm install
-cp .env.example .env   # then edit .env and paste your bot token
 ```
 
-Optional but recommended — lock the bot to your account: put your numeric
-Telegram user ID (e.g. from [@userinfobot](https://t.me/userinfobot)) into
-`TELEGRAM_ALLOWED_IDS` in `.env`.
+Add it to your OpenCode config (`~/.config/opencode/opencode.json`, or
+`opencode.json` in a project) with your token:
 
-## Run
+```jsonc
+{
+  "plugins": [
+    {
+      "package": "/path/to/telecode",
+      "options": {
+        "token": "1234567890:AA-your-token",
+        "allowedIds": "8010764520"   // optional: your Telegram user ID(s), comma-separated
+      }
+    }
+  ]
+}
+```
+
+`token` can also come from the `TELEGRAM_BOT_TOKEN` environment variable.
+`allowedIds` (or `TELEGRAM_ALLOWED_IDS`) locks the bot to your account — set it,
+because the bot can run prompts and shell commands. Find your numeric ID from
+[@userinfobot](https://t.me/userinfobot).
+
+Reload OpenCode to pick up the plugin:
 
 ```sh
-npm start       # foreground
-./start.sh      # background, logs to log/bot.log
-./stop.sh       # stop the background process
+opencode api post /api/location/reload
 ```
 
-Run at login (macOS `launchd`) — replace the paths and `node` path:
-
-```sh
-mkdir -p ~/Library/LaunchAgents
-cat > ~/Library/LaunchAgents/com.telecode.plist <<'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>com.telecode</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/path/to/node</string>
-    <string>--env-file=.env</string>
-    <string>index.js</string>
-  </array>
-  <key>WorkingDirectory</key><string>/path/to/telecode</string>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>/path/to/telecode/log/bot.log</string>
-  <key>StandardErrorPath</key><string>/path/to/telecode/log/bot.err.log</string>
-</dict>
-</plist>
-EOF
-launchctl load ~/Library/LaunchAgents/com.telecode.plist
-```
+(or restart `opencode`).
 
 ## Usage
 
@@ -74,25 +69,8 @@ launchctl load ~/Library/LaunchAgents/com.telecode.plist
 - Session buttons: **View / Interrupt / Compact / Model / Agent / Export / Delete**
 - `/leave` — close the active session
 
-## Test
-
-```sh
-npm test
-```
-
-Runs the smoke test: formatting helpers, the OpenCode API (a real
-create → prompt → reply → switch → compact → delete round-trip), and Telegram
-reachability. It does not start the bot.
-
-## Security
-
-The bot can run prompts, shell commands, and edit files through OpenCode — treat
-the token like a password. Set `TELEGRAM_ALLOWED_IDS` so only you can use it, and
-never commit `.env`.
-
 ## Project layout
 
-- `src/opencode.js` — OpenCode HTTP API wrapper
-- `src/format.js` — markdown → Telegram HTML + message chunking
+- `index.ts` — plugin entrypoint (single instance, tied to OpenCode lifecycle)
 - `src/bot.js` — the Telegram bot (grammY)
-- `index.js` — entrypoint
+- `src/format.js` — markdown → Telegram HTML + message chunking

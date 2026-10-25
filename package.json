@@ -1,19 +1,10 @@
 {
   "name": "telecode",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Control your OpenCode sessions from Telegram",
-  "engines": {
-    "node": ">=20.6"
-  },
-  "scripts": {
-    "start": "node --env-file=.env index.js",
-    "dev": "node --watch --env-file=.env index.js",
-    "test": "node --env-file=.env test/smoke.mjs"
-  },
+  "description": "OpenCode plugin: control your sessions from Telegram",
   "dependencies": {
-    "@opencode/client": "2.1.3",
     "grammy": "^1.30.0"
   }
 }
