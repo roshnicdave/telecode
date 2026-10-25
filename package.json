@@ -1,7 +1,7 @@
 {
   "name": "@roshnicdave/telecode",
-  "version": "2.0.0",
-  "description": "Drive Pi from Telegram: phone messages become Pi turns, and Pi replies back.",
+  "version": "2.1.0",
+  "description": "Control live Pi coding-agent sessions from Telegram.",
   "type": "module",
   "license": "MIT",
   "files": [
@@ -15,11 +15,18 @@
     "remote",
     "telecode"
   ],
+  "scripts": {
+    "test": "node --test --experimental-strip-types tests/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "grammy": "^1.46.0"
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
   }
 }
