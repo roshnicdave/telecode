@@ -1,9 +1,28 @@
 {
-  "name": "telecode",
+  "name": "@roshnicdave/telecode",
   "version": "1.0.0",
-  "description": "Control your coding agent sessions from Telegram. Ships as an Agent Plugins 1.0.0 package: a portable MCP server plus a skill.",
+  "description": "Control your coding agent sessions from Telegram. An Agent Plugins 1.0.0 plugin: a portable MCP server plus a skill, for any MCP-capable coding agent.",
   "type": "module",
   "license": "MIT",
+  "homepage": "https://github.com/roshnicdave/telecode#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/roshnicdave/telecode.git"
+  },
+  "bugs": {
+    "url": "https://github.com/roshnicdave/telecode/issues"
+  },
+  "keywords": [
+    "telegram",
+    "mcp",
+    "agent-plugins",
+    "coding-agent",
+    "remote-control",
+    "sessions"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "telecode": "dist/index.cjs"
   },

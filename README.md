@@ -21,14 +21,33 @@ telecode/
 │   └── telecode/
 │       └── SKILL.md     # instructions for the agent
 ├── dist/
-│   └── index.mjs        # self-contained bundle (no runtime deps)
+│   └── index.cjs        # self-contained bundle (no runtime deps)
 └── src/                 # TypeScript source
 ```
 
 ## Install
 
-1. Point your agent's plugin loader at this directory. A conforming client reads
-   `plugin.json`, discovers `skills/`, and launches the `mcp.json` server.
+### From npm
+
+```sh
+npm install @roshnicdave/telecode
+```
+
+Then point your agent's plugin loader at the installed package directory
+(`node_modules/@roshnicdave/telecode`). A conforming client reads `plugin.json`,
+discovers `skills/`, and launches the `mcp.json` server.
+
+### From source
+
+```sh
+git clone https://github.com/roshnicdave/telecode
+```
+
+Then point your agent's plugin loader at the cloned directory.
+
+### Configure
+
+1. Point your agent's plugin loader at the package directory (from npm or source).
 2. Set the bot token (and optional owner allow-list) in the agent's environment:
 
 ```sh
@@ -52,8 +71,8 @@ Optional environment variables:
 
 ```sh
 npm install
-npm run build     # bundles src/index.ts -> dist/index.mjs (esbuild)
-node dist/index.mjs
+npm run build     # bundles src/index.ts -> dist/index.cjs (esbuild)
+node dist/index.cjs
 ```
 
 ## How it works
