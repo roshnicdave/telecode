@@ -16,7 +16,7 @@ import { registerTools } from "./tools.js";
 // Keep it empty: each deployment should configure its own model list.
 const DEFAULT_MODELS: string[] = [];
 
-const VERSION = "1.0.3";
+const VERSION = "1.0.4";
 
 function dataDir(): string {
   if (process.env.TELECODE_DATA_DIR) return process.env.TELECODE_DATA_DIR;
@@ -42,36 +42,70 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
-// Only one process should poll Telegram. Other instances (e.g. a second
-// terminal running the same agent) still serve MCP tools, but skip the bot
-// so two pollers don't fight over getUpdates.
-function acquireBotLock(dir: string): { owned: boolean; release: () => void } {
+// Only one process should poll Telegram. The lock holder polls; other
+// instances serve MCP tools only and automatically take over polling if the
+// holder exits. The lock is a PID file in the data dir, so it stays portable
+// across harnesses and needs no harness-specific configuration.
+function tryAcquireBotLock(dir: string): boolean {
   const lockPath = join(dir, "bot.lock");
-  const release = () => {
-    try {
-      if (readFileSync(lockPath, "utf8").trim() === String(process.pid)) rmSync(lockPath, { force: true });
-    } catch {
-      // ignore
-    }
-  };
   try {
     if (existsSync(lockPath)) {
       const pid = Number(readFileSync(lockPath, "utf8").trim());
-      if (pid && isProcessAlive(pid) && pid !== process.pid) {
-        return { owned: false, release };
-      }
+      if (pid && pid !== process.pid && isProcessAlive(pid)) return false;
       rmSync(lockPath, { force: true });
     }
     writeFileSync(lockPath, String(process.pid), { flag: "wx" });
-    return { owned: true, release };
+    return true;
   } catch {
-    return { owned: false, release };
+    return false;
   }
+}
+
+function releaseBotLock(dir: string): void {
+  const lockPath = join(dir, "bot.lock");
+  try {
+    if (readFileSync(lockPath, "utf8").trim() === String(process.pid)) rmSync(lockPath, { force: true });
+  } catch {
+    // ignore
+  }
+}
+
+function startBotSupervisor(handle: BotHandle, dir: string): { stop: () => Promise<void> } {
+  let polling = false;
+  let stopped = false;
+
+  const tick = async () => {
+    if (stopped || polling) return;
+    if (!tryAcquireBotLock(dir)) return; // another live instance holds it; retry next tick
+    polling = true;
+    console.error("[telecode] telegram bot: polling");
+    try {
+      await handle.start();
+    } catch (e) {
+      console.error("[telecode] bot failed to start:", (e as Error)?.message ?? e);
+      polling = false;
+      releaseBotLock(dir);
+    }
+  };
+
+  void tick();
+  const interval = setInterval(() => void tick(), 5000);
+
+  return {
+    stop: async () => {
+      stopped = true;
+      clearInterval(interval);
+      if (polling) {
+        await handle.stop().catch(() => {});
+        polling = false;
+      }
+      releaseBotLock(dir);
+    },
+  };
 }
 
 async function main() {
   const store = new Store(dataDir());
-  const lock = acquireBotLock(dataDir());
 
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const allowedIds = process.env.TELEGRAM_ALLOWED_IDS ?? "";
@@ -84,13 +118,7 @@ async function main() {
   let handle: BotHandle;
   if (token) {
     handle = createBot(store, token, allowedIds, modelList);
-    if (lock.owned) {
-      console.error(`[telecode] telegram bot: enabled${allowedIds ? ` (allowed ids: ${allowedIds})` : " (allow all)"}`);
-    } else {
-      console.error("[telecode] telegram bot: another instance is polling; serving MCP only");
-      handle.start = async () => {};
-      handle.stop = async () => {};
-    }
+    console.error(`[telecode] telegram bot: token set${allowedIds ? ` (allowed ids: ${allowedIds})` : " (allow all)"}`);
   } else {
     console.error("[telecode] telegram bot: disabled (TELEGRAM_BOT_TOKEN not set)");
     const stubBot = {
@@ -109,24 +137,20 @@ async function main() {
   );
   registerTools(server, store, handle);
 
-  // Start the bot and connect the MCP transport. Both keep the process alive.
-  const botReady = handle.start().catch((e) => {
-    console.error("[telecode] bot failed to start:", (e as Error)?.message ?? e);
-  });
+  // Poll Telegram only while this process holds the bot lock. If another
+  // instance holds it, we keep serving MCP and take over automatically.
+  const supervisor = token ? startBotSupervisor(handle, dataDir()) : null;
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
   const shutdown = async () => {
-    await handle.stop().catch(() => {});
+    await supervisor?.stop();
     await server.close().catch(() => {});
-    lock.release();
     process.exit(0);
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
-
-  await botReady;
 }
 
 main().catch((e) => {

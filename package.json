@@ -1,6 +1,6 @@
 {
   "name": "@roshnicdave/telecode",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Control your coding agent sessions from Telegram. An Agent Plugins 1.0.0 plugin: a portable MCP server plus a skill, for any MCP-capable coding agent.",
   "type": "module",
   "license": "MIT",

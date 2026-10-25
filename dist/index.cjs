@@ -32060,7 +32060,7 @@ function resolveChatId(handle, chatId) {
 
 // src/index.ts
 var DEFAULT_MODELS = [];
-var VERSION = "1.0.3";
+var VERSION = "1.0.4";
 function dataDir() {
   if (process.env.TELECODE_DATA_DIR) return process.env.TELECODE_DATA_DIR;
   if (process.env.PLUGIN_DATA) return (0, import_node_path2.join)(process.env.PLUGIN_DATA, "data");
@@ -32080,31 +32080,60 @@ function isProcessAlive(pid) {
     return false;
   }
 }
-function acquireBotLock(dir) {
+function tryAcquireBotLock(dir) {
   const lockPath = (0, import_node_path2.join)(dir, "bot.lock");
-  const release = () => {
-    try {
-      if ((0, import_node_fs2.readFileSync)(lockPath, "utf8").trim() === String(process.pid)) (0, import_node_fs2.rmSync)(lockPath, { force: true });
-    } catch {
-    }
-  };
   try {
     if ((0, import_node_fs2.existsSync)(lockPath)) {
       const pid = Number((0, import_node_fs2.readFileSync)(lockPath, "utf8").trim());
-      if (pid && isProcessAlive(pid) && pid !== process.pid) {
-        return { owned: false, release };
-      }
+      if (pid && pid !== process.pid && isProcessAlive(pid)) return false;
       (0, import_node_fs2.rmSync)(lockPath, { force: true });
     }
     (0, import_node_fs2.writeFileSync)(lockPath, String(process.pid), { flag: "wx" });
-    return { owned: true, release };
+    return true;
   } catch {
-    return { owned: false, release };
+    return false;
   }
+}
+function releaseBotLock(dir) {
+  const lockPath = (0, import_node_path2.join)(dir, "bot.lock");
+  try {
+    if ((0, import_node_fs2.readFileSync)(lockPath, "utf8").trim() === String(process.pid)) (0, import_node_fs2.rmSync)(lockPath, { force: true });
+  } catch {
+  }
+}
+function startBotSupervisor(handle, dir) {
+  let polling = false;
+  let stopped = false;
+  const tick = async () => {
+    if (stopped || polling) return;
+    if (!tryAcquireBotLock(dir)) return;
+    polling = true;
+    console.error("[telecode] telegram bot: polling");
+    try {
+      await handle.start();
+    } catch (e) {
+      console.error("[telecode] bot failed to start:", e?.message ?? e);
+      polling = false;
+      releaseBotLock(dir);
+    }
+  };
+  void tick();
+  const interval = setInterval(() => void tick(), 5e3);
+  return {
+    stop: async () => {
+      stopped = true;
+      clearInterval(interval);
+      if (polling) {
+        await handle.stop().catch(() => {
+        });
+        polling = false;
+      }
+      releaseBotLock(dir);
+    }
+  };
 }
 async function main() {
   const store = new Store(dataDir());
-  const lock = acquireBotLock(dataDir());
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const allowedIds = process.env.TELEGRAM_ALLOWED_IDS ?? "";
   const modelList = models();
@@ -32114,15 +32143,7 @@ async function main() {
   let handle;
   if (token) {
     handle = createBot(store, token, allowedIds, modelList);
-    if (lock.owned) {
-      console.error(`[telecode] telegram bot: enabled${allowedIds ? ` (allowed ids: ${allowedIds})` : " (allow all)"}`);
-    } else {
-      console.error("[telecode] telegram bot: another instance is polling; serving MCP only");
-      handle.start = async () => {
-      };
-      handle.stop = async () => {
-      };
-    }
+    console.error(`[telecode] telegram bot: token set${allowedIds ? ` (allowed ids: ${allowedIds})` : " (allow all)"}`);
   } else {
     console.error("[telecode] telegram bot: disabled (TELEGRAM_BOT_TOKEN not set)");
     const stubBot = {
@@ -32141,22 +32162,17 @@ async function main() {
     { capabilities: { tools: {} } }
   );
   registerTools(server, store, handle);
-  const botReady = handle.start().catch((e) => {
-    console.error("[telecode] bot failed to start:", e?.message ?? e);
-  });
+  const supervisor = token ? startBotSupervisor(handle, dataDir()) : null;
   const transport = new StdioServerTransport();
   await server.connect(transport);
   const shutdown = async () => {
-    await handle.stop().catch(() => {
-    });
+    await supervisor?.stop();
     await server.close().catch(() => {
     });
-    lock.release();
     process.exit(0);
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
-  await botReady;
 }
 main().catch((e) => {
   console.error("[telecode] fatal:", e?.message ?? e);
