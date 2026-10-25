@@ -4,6 +4,7 @@
 
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { Bot } from "grammy";
@@ -15,7 +16,7 @@ import { registerTools } from "./tools.js";
 // Keep it empty: each deployment should configure its own model list.
 const DEFAULT_MODELS: string[] = [];
 
-const VERSION = "1.0.2";
+const VERSION = "1.0.3";
 
 function dataDir(): string {
   if (process.env.TELECODE_DATA_DIR) return process.env.TELECODE_DATA_DIR;
@@ -32,8 +33,45 @@ function models(): string[] {
   return DEFAULT_MODELS;
 }
 
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Only one process should poll Telegram. Other instances (e.g. a second
+// terminal running the same agent) still serve MCP tools, but skip the bot
+// so two pollers don't fight over getUpdates.
+function acquireBotLock(dir: string): { owned: boolean; release: () => void } {
+  const lockPath = join(dir, "bot.lock");
+  const release = () => {
+    try {
+      if (readFileSync(lockPath, "utf8").trim() === String(process.pid)) rmSync(lockPath, { force: true });
+    } catch {
+      // ignore
+    }
+  };
+  try {
+    if (existsSync(lockPath)) {
+      const pid = Number(readFileSync(lockPath, "utf8").trim());
+      if (pid && isProcessAlive(pid) && pid !== process.pid) {
+        return { owned: false, release };
+      }
+      rmSync(lockPath, { force: true });
+    }
+    writeFileSync(lockPath, String(process.pid), { flag: "wx" });
+    return { owned: true, release };
+  } catch {
+    return { owned: false, release };
+  }
+}
+
 async function main() {
   const store = new Store(dataDir());
+  const lock = acquireBotLock(dataDir());
 
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const allowedIds = process.env.TELEGRAM_ALLOWED_IDS ?? "";
@@ -46,7 +84,13 @@ async function main() {
   let handle: BotHandle;
   if (token) {
     handle = createBot(store, token, allowedIds, modelList);
-    console.error(`[telecode] telegram bot: enabled${allowedIds ? ` (allowed ids: ${allowedIds})` : " (allow all)"}`);
+    if (lock.owned) {
+      console.error(`[telecode] telegram bot: enabled${allowedIds ? ` (allowed ids: ${allowedIds})` : " (allow all)"}`);
+    } else {
+      console.error("[telecode] telegram bot: another instance is polling; serving MCP only");
+      handle.start = async () => {};
+      handle.stop = async () => {};
+    }
   } else {
     console.error("[telecode] telegram bot: disabled (TELEGRAM_BOT_TOKEN not set)");
     const stubBot = {
@@ -76,6 +120,7 @@ async function main() {
   const shutdown = async () => {
     await handle.stop().catch(() => {});
     await server.close().catch(() => {});
+    lock.release();
     process.exit(0);
   };
   process.on("SIGINT", shutdown);

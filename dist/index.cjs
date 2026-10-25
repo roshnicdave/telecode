@@ -21522,6 +21522,7 @@ var require_mod2 = __commonJS({
 // src/index.ts
 var import_node_os = require("node:os");
 var import_node_path2 = require("node:path");
+var import_node_fs2 = require("node:fs");
 
 // node_modules/zod/v4/core/util.js
 var util_exports = {};
@@ -31415,12 +31416,12 @@ function sessionLabel(s, i) {
   return parts.join(" \xB7 ");
 }
 function panelText(s) {
-  const lines = [`\u{1F5C2} <b>${escapeHtml(sessionTitle(s))}</b>`];
-  if (s.directory) lines.push(`\u{1F4C1} <code>${escapeHtml(s.directory)}</code>`);
-  lines.push(`\u{1F9E0} ${escapeHtml(s.model || "default")}`);
-  if (s.pending.length) lines.push(`\u{1F4E8} ${s.pending.length} pending`);
-  if (s.interrupted) lines.push(`\u23F9 interrupted`);
-  lines.push(`\u{1F550} ${relTime(s.updatedAt)}`);
+  const lines = [`<b>${escapeHtml(sessionTitle(s))}</b>`];
+  if (s.directory) lines.push(`<code>${escapeHtml(s.directory)}</code>`);
+  lines.push(escapeHtml(s.model || "default model"));
+  if (s.pending.length) lines.push(`${s.pending.length} pending`);
+  if (s.interrupted) lines.push("interrupted");
+  lines.push(relTime(s.updatedAt));
   return lines.join("\n");
 }
 function createBot(store, token, allowedIds, models2) {
@@ -31433,7 +31434,7 @@ function createBot(store, token, allowedIds, models2) {
   const active = /* @__PURE__ */ new Map();
   const ui = /* @__PURE__ */ new Map();
   const pendingModel = /* @__PURE__ */ new Map();
-  const err = (e) => `\u274C <code>${escapeHtml(String(e?.message ?? e))}</code>`;
+  const err = (e) => `<code>${escapeHtml(String(e?.message ?? e))}</code>`;
   async function sendBlocks(ctx, blocks, editMessageId) {
     const chunks = packBlocks(blocks);
     for (let i = 0; i < chunks.length; i++) {
@@ -31445,7 +31446,7 @@ function createBot(store, token, allowedIds, models2) {
     }
   }
   function panelKeyboard(sessionId) {
-    return new import_grammy.InlineKeyboard().text("\u{1F441} View", `view:${sessionId}`).text("\u23F9 Interrupt", `interrupt:${sessionId}`).row().text("\u{1F9F9} Compact", `compact:${sessionId}`).text("\u{1F500} Model", `model:${sessionId}`).row().text("\u2B07\uFE0F Export", `export:${sessionId}`).text("\u{1F5D1} Delete", `delete:${sessionId}`).row().text("\u{1F4C2} Sessions", "sessions").text("\u{1F6AA} Leave", "leave");
+    return new import_grammy.InlineKeyboard().text("View", `view:${sessionId}`).text("Interrupt", `interrupt:${sessionId}`).row().text("Compact", `compact:${sessionId}`).text("Model", `model:${sessionId}`).row().text("Export", `export:${sessionId}`).text("Delete", `delete:${sessionId}`).row().text("Sessions", "sessions").text("Leave", "leave");
   }
   async function showSessions(ctx, opts = {}) {
     const u = ui.get(ctx.chat.id) ?? { sessions: [], page: 0, searching: false };
@@ -31457,7 +31458,7 @@ function createBot(store, token, allowedIds, models2) {
     u.page = Math.floor((opts.append ? u.page : 0) + 1);
     ui.set(ctx.chat.id, u);
     if (!u.sessions.length) {
-      const txt = "No sessions yet.";
+      const txt = "No sessions.";
       if (opts.edit) await ctx.editMessageText(txt).catch(() => {
       });
       else await ctx.reply(txt);
@@ -31465,10 +31466,10 @@ function createBot(store, token, allowedIds, models2) {
     }
     const kb = new import_grammy.InlineKeyboard();
     u.sessions.forEach((s, i) => kb.text(sessionLabel(s, i), `open:${s.id}`).row());
-    kb.text("\u{1F50D} Search", "search").text("\u2795 New", "new").row();
+    kb.text("Search", "search").text("New", "new").row();
     const hasMore = u.sessions.length < all.length;
-    kb.text(hasMore ? "\u2B07\uFE0F Load more" : "\u{1F501} Refresh", hasMore ? "loadmore" : "sessions");
-    const text2 = `\u{1F5C2} <b>Sessions</b> (${u.sessions.length}${hasMore ? "+" : ""})`;
+    kb.text(hasMore ? "More" : "Refresh", hasMore ? "loadmore" : "sessions");
+    const text2 = `<b>Sessions</b> (${u.sessions.length}${hasMore ? "+" : ""})`;
     const o = { parse_mode: "HTML", reply_markup: kb };
     if (opts.edit) await ctx.editMessageText(text2, o).catch(async () => ctx.reply(text2, o));
     else await ctx.reply(text2, o);
@@ -31479,8 +31480,8 @@ function createBot(store, token, allowedIds, models2) {
     if (!hits.length) return ctx.reply("No matches.");
     const kb = new import_grammy.InlineKeyboard();
     hits.slice(0, 10).forEach((s, i) => kb.text(sessionLabel(s, i), `open:${s.id}`).row());
-    kb.text("\u2039 Back", "sessions");
-    await ctx.reply(`\u{1F50D} ${hits.length} result(s)`, { parse_mode: "HTML", reply_markup: kb });
+    kb.text("Back", "sessions");
+    await ctx.reply(`${hits.length} result(s)`, { parse_mode: "HTML", reply_markup: kb });
   }
   function openSession(ctx, id, opts = {}) {
     const s = store.get(id);
@@ -31499,8 +31500,6 @@ function createBot(store, token, allowedIds, models2) {
     const id = ctx.from?.id;
     if (id !== void 0) knownChatIds.add(id);
     if (!ALLOW_ALL && (id === void 0 || !allowed.has(id))) {
-      await ctx.reply("\u26D4\uFE0F").catch(() => {
-      });
       return;
     }
     await next();
@@ -31508,24 +31507,24 @@ function createBot(store, token, allowedIds, models2) {
   bot.command("start", async (ctx) => {
     const a = active.get(ctx.chat.id);
     const s = a ? store.get(a) : void 0;
-    const lines = ["\u{1F44B} <b>Telecode</b>"];
+    const lines = ["<b>Telecode</b>"];
     if (s) {
-      lines.push(`\u{1F3AF} <b>${escapeHtml(sessionTitle(s))}</b>`);
-      if (s.model) lines.push(`\u{1F9E0} ${escapeHtml(shortModel(s.model))}`);
-      if (s.directory) lines.push(`\u{1F4C1} <code>${escapeHtml(s.directory)}</code>`);
+      lines.push(`Active: <b>${escapeHtml(sessionTitle(s))}</b>`);
+      if (s.model) lines.push(escapeHtml(shortModel(s.model)));
+      if (s.directory) lines.push(`<code>${escapeHtml(s.directory)}</code>`);
     } else {
       lines.push("No active session.");
     }
     await ctx.reply(lines.join("\n"), {
       parse_mode: "HTML",
-      reply_markup: new import_grammy.InlineKeyboard().text("\u{1F4C2} Sessions", "sessions").text("\u2795 New", "new")
+      reply_markup: new import_grammy.InlineKeyboard().text("Sessions", "sessions").text("New", "new")
     });
   });
   bot.command("sessions", (ctx) => showSessions(ctx));
   bot.command("new", (ctx) => newSession(ctx));
   bot.command("leave", (ctx) => {
     active.delete(ctx.chat.id);
-    ctx.reply("\u{1F6AA}");
+    ctx.reply("Left.");
   });
   bot.on("message:text", async (ctx) => {
     const text2 = ctx.message.text;
@@ -31539,15 +31538,14 @@ function createBot(store, token, allowedIds, models2) {
     const sid = active.get(ctx.chat.id);
     if (!sid) {
       return ctx.reply("Pick a session:", {
-        reply_markup: new import_grammy.InlineKeyboard().text("\u{1F4C2} Sessions", "sessions")
+        reply_markup: new import_grammy.InlineKeyboard().text("Sessions", "sessions")
       });
     }
     const s = store.get(sid);
     if (!s) return ctx.reply(err(new Error("session not found")));
     store.addMessage(sid, { role: "user", content: text2 });
     store.addPending(sid, text2);
-    await ctx.reply(`\u{1F4E8} <b>Queued</b> \u2014 the agent will respond here.
-<code>${escapeHtml(truncate(sessionTitle(s), 30))}</code>`, HTML);
+    await ctx.reply("Queued.", HTML);
   });
   bot.on("callback_query:data", async (ctx, next) => {
     await ctx.answerCallbackQuery().catch(() => {
@@ -31560,12 +31558,12 @@ function createBot(store, token, allowedIds, models2) {
     const u = ui.get(ctx.chat.id) ?? { sessions: [], page: 0, searching: false };
     u.searching = true;
     ui.set(ctx.chat.id, u);
-    await ctx.reply("\u{1F50D} Search:");
+    await ctx.reply("Search:");
   });
   bot.callbackQuery("new", (ctx) => newSession(ctx));
   bot.callbackQuery("leave", (ctx) => {
     active.delete(ctx.chat.id);
-    ctx.reply("\u{1F6AA}");
+    ctx.reply("Left.");
   });
   bot.callbackQuery(/^open:(.+)$/, (ctx) => openSession(ctx, ctx.match[1], { edit: true }));
   bot.callbackQuery(/^refresh:(.+)$/, (ctx) => openSession(ctx, ctx.match[1], { edit: true }));
@@ -31575,18 +31573,18 @@ function createBot(store, token, allowedIds, models2) {
     const msgs = s.messages.slice(-24);
     const blocks = [];
     for (const m of msgs) {
-      const who = m.role === "user" ? "\u{1F464} You" : m.role === "assistant" ? "\u{1F916} Assistant" : `\u{1F6E0} ${m.role}`;
+      const who = m.role === "user" ? "You" : m.role === "assistant" ? "Assistant" : m.role;
       blocks.push({ html: `<b>${escapeHtml(who)}</b>` });
       blocks.push(...textToBlocks(m.content));
     }
-    if (!blocks.length) return ctx.reply("_(empty)_", HTML);
+    if (!blocks.length) return ctx.reply("(empty)", HTML);
     await sendBlocks(ctx, blocks);
   });
   bot.callbackQuery(/^interrupt:(.+)$/, async (ctx) => {
     const id = ctx.match[1];
     try {
       store.update(id, (s) => s.interrupted = true);
-      await ctx.reply("\u23F9");
+      await ctx.reply("Interrupted.");
     } catch (e) {
       await ctx.reply(err(e), HTML);
     }
@@ -31595,21 +31593,21 @@ function createBot(store, token, allowedIds, models2) {
     const id = ctx.match[1];
     try {
       store.update(id, (s) => s.compactRequested = true);
-      await ctx.reply("\u{1F9F9}");
+      await ctx.reply("Compacted.");
     } catch (e) {
       await ctx.reply(err(e), HTML);
     }
   });
   bot.callbackQuery(/^delete:(.+)$/, async (ctx) => {
     const id = ctx.match[1];
-    const kb = new import_grammy.InlineKeyboard().text("\u26A0\uFE0F Delete", `deleteok:${id}`).text("Cancel", `refresh:${id}`);
-    await ctx.reply("\u{1F5D1} Delete this session?", { reply_markup: kb });
+    const kb = new import_grammy.InlineKeyboard().text("Delete", `deleteok:${id}`).text("Cancel", `refresh:${id}`);
+    await ctx.reply("Delete this session?", { reply_markup: kb });
   });
   bot.callbackQuery(/^deleteok:(.+)$/, async (ctx) => {
     const id = ctx.match[1];
     store.remove(id);
     if (active.get(ctx.chat.id) === id) active.delete(ctx.chat.id);
-    await ctx.reply("\u{1F5D1}");
+    await ctx.reply("Deleted.");
   });
   bot.callbackQuery(/^export:(.+)$/, async (ctx) => {
     const id = ctx.match[1];
@@ -31622,15 +31620,15 @@ function createBot(store, token, allowedIds, models2) {
     const id = ctx.match[1];
     const s = store.get(id);
     if (!s) return ctx.reply(err(new Error("session not found")));
-    if (!models2.length) return ctx.reply("No models configured. Set TELECODE_MODELS.", HTML);
+    if (!models2.length) return ctx.reply("No models configured.", HTML);
     pendingModel.set(ctx.chat.id, { sessionId: id, items: models2 });
     const kb = new import_grammy.InlineKeyboard();
     models2.slice(0, 30).forEach((m, i) => {
       const isCur = s.model === m;
-      kb.text(truncate(`${isCur ? "\u2705 " : ""}${m}`, 50), `pick:${i}`).row();
+      kb.text(truncate(`${isCur ? "* " : ""}${m}`, 50), `pick:${i}`).row();
     });
-    kb.text("\u2039 Back", `refresh:${id}`);
-    await ctx.reply("\u{1F500} Model", { parse_mode: "HTML", reply_markup: kb });
+    kb.text("Back", `refresh:${id}`);
+    await ctx.reply("Model", { parse_mode: "HTML", reply_markup: kb });
   });
   bot.callbackQuery(/^pick:(\d+)$/, async (ctx) => {
     const p = pendingModel.get(ctx.chat.id);
@@ -31639,7 +31637,7 @@ function createBot(store, token, allowedIds, models2) {
     if (!m) return;
     try {
       store.update(p.sessionId, (s) => s.model = m);
-      await ctx.reply(`\u{1F500} ${escapeHtml(m)}`, HTML);
+      await ctx.reply(`Model: ${escapeHtml(m)}`, HTML);
     } catch (e) {
       await ctx.reply(err(e), HTML);
     }
@@ -32062,7 +32060,7 @@ function resolveChatId(handle, chatId) {
 
 // src/index.ts
 var DEFAULT_MODELS = [];
-var VERSION = "1.0.2";
+var VERSION = "1.0.3";
 function dataDir() {
   if (process.env.TELECODE_DATA_DIR) return process.env.TELECODE_DATA_DIR;
   if (process.env.PLUGIN_DATA) return (0, import_node_path2.join)(process.env.PLUGIN_DATA, "data");
@@ -32074,8 +32072,39 @@ function models() {
   }
   return DEFAULT_MODELS;
 }
+function isProcessAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function acquireBotLock(dir) {
+  const lockPath = (0, import_node_path2.join)(dir, "bot.lock");
+  const release = () => {
+    try {
+      if ((0, import_node_fs2.readFileSync)(lockPath, "utf8").trim() === String(process.pid)) (0, import_node_fs2.rmSync)(lockPath, { force: true });
+    } catch {
+    }
+  };
+  try {
+    if ((0, import_node_fs2.existsSync)(lockPath)) {
+      const pid = Number((0, import_node_fs2.readFileSync)(lockPath, "utf8").trim());
+      if (pid && isProcessAlive(pid) && pid !== process.pid) {
+        return { owned: false, release };
+      }
+      (0, import_node_fs2.rmSync)(lockPath, { force: true });
+    }
+    (0, import_node_fs2.writeFileSync)(lockPath, String(process.pid), { flag: "wx" });
+    return { owned: true, release };
+  } catch {
+    return { owned: false, release };
+  }
+}
 async function main() {
   const store = new Store(dataDir());
+  const lock = acquireBotLock(dataDir());
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const allowedIds = process.env.TELEGRAM_ALLOWED_IDS ?? "";
   const modelList = models();
@@ -32085,7 +32114,15 @@ async function main() {
   let handle;
   if (token) {
     handle = createBot(store, token, allowedIds, modelList);
-    console.error(`[telecode] telegram bot: enabled${allowedIds ? ` (allowed ids: ${allowedIds})` : " (allow all)"}`);
+    if (lock.owned) {
+      console.error(`[telecode] telegram bot: enabled${allowedIds ? ` (allowed ids: ${allowedIds})` : " (allow all)"}`);
+    } else {
+      console.error("[telecode] telegram bot: another instance is polling; serving MCP only");
+      handle.start = async () => {
+      };
+      handle.stop = async () => {
+      };
+    }
   } else {
     console.error("[telecode] telegram bot: disabled (TELEGRAM_BOT_TOKEN not set)");
     const stubBot = {
@@ -32114,6 +32151,7 @@ async function main() {
     });
     await server.close().catch(() => {
     });
+    lock.release();
     process.exit(0);
   };
   process.on("SIGINT", shutdown);

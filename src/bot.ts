@@ -30,12 +30,12 @@ function sessionLabel(s: Session, i: number): string {
 }
 
 function panelText(s: Session): string {
-  const lines = [`🗂 <b>${escapeHtml(sessionTitle(s))}</b>`];
-  if (s.directory) lines.push(`📁 <code>${escapeHtml(s.directory)}</code>`);
-  lines.push(`🧠 ${escapeHtml(s.model || "default")}`);
-  if (s.pending.length) lines.push(`📨 ${s.pending.length} pending`);
-  if (s.interrupted) lines.push(`⏹ interrupted`);
-  lines.push(`🕐 ${relTime(s.updatedAt)}`);
+  const lines = [`<b>${escapeHtml(sessionTitle(s))}</b>`];
+  if (s.directory) lines.push(`<code>${escapeHtml(s.directory)}</code>`);
+  lines.push(escapeHtml(s.model || "default model"));
+  if (s.pending.length) lines.push(`${s.pending.length} pending`);
+  if (s.interrupted) lines.push("interrupted");
+  lines.push(relTime(s.updatedAt));
   return lines.join("\n");
 }
 
@@ -60,7 +60,7 @@ export function createBot(
   const ui = new Map<number, { sessions: Session[]; page: number; searching: boolean }>();
   const pendingModel = new Map<number, { sessionId: string; items: string[] }>();
 
-  const err = (e: unknown) => `❌ <code>${escapeHtml(String((e as Error)?.message ?? e))}</code>`;
+  const err = (e: unknown) => `<code>${escapeHtml(String((e as Error)?.message ?? e))}</code>`;
 
   async function sendBlocks(
     ctx: { chat: { id: number }; reply: (t: string, o?: unknown) => Promise<unknown>; api: Bot["api"] },
@@ -81,17 +81,17 @@ export function createBot(
 
   function panelKeyboard(sessionId: string): InlineKeyboard {
     return new InlineKeyboard()
-      .text("👁 View", `view:${sessionId}`)
-      .text("⏹ Interrupt", `interrupt:${sessionId}`)
+      .text("View", `view:${sessionId}`)
+      .text("Interrupt", `interrupt:${sessionId}`)
       .row()
-      .text("🧹 Compact", `compact:${sessionId}`)
-      .text("🔀 Model", `model:${sessionId}`)
+      .text("Compact", `compact:${sessionId}`)
+      .text("Model", `model:${sessionId}`)
       .row()
-      .text("⬇️ Export", `export:${sessionId}`)
-      .text("🗑 Delete", `delete:${sessionId}`)
+      .text("Export", `export:${sessionId}`)
+      .text("Delete", `delete:${sessionId}`)
       .row()
-      .text("📂 Sessions", "sessions")
-      .text("🚪 Leave", "leave");
+      .text("Sessions", "sessions")
+      .text("Leave", "leave");
   }
 
   async function showSessions(
@@ -108,7 +108,7 @@ export function createBot(
     ui.set(ctx.chat.id, u);
 
     if (!u.sessions.length) {
-      const txt = "No sessions yet.";
+      const txt = "No sessions.";
       if (opts.edit) await ctx.editMessageText(txt).catch(() => {});
       else await ctx.reply(txt);
       return;
@@ -116,11 +116,11 @@ export function createBot(
 
     const kb = new InlineKeyboard();
     u.sessions.forEach((s, i) => kb.text(sessionLabel(s, i), `open:${s.id}`).row());
-    kb.text("🔍 Search", "search").text("➕ New", "new").row();
+    kb.text("Search", "search").text("New", "new").row();
     const hasMore = u.sessions.length < all.length;
-    kb.text(hasMore ? "⬇️ Load more" : "🔁 Refresh", hasMore ? "loadmore" : "sessions");
+    kb.text(hasMore ? "More" : "Refresh", hasMore ? "loadmore" : "sessions");
 
-    const text = `🗂 <b>Sessions</b> (${u.sessions.length}${hasMore ? "+" : ""})`;
+    const text = `<b>Sessions</b> (${u.sessions.length}${hasMore ? "+" : ""})`;
     const o = { parse_mode: "HTML", reply_markup: kb };
     if (opts.edit) await ctx.editMessageText(text, o).catch(async () => ctx.reply(text, o));
     else await ctx.reply(text, o);
@@ -135,8 +135,8 @@ export function createBot(
     if (!hits.length) return ctx.reply("No matches.");
     const kb = new InlineKeyboard();
     hits.slice(0, 10).forEach((s, i) => kb.text(sessionLabel(s, i), `open:${s.id}`).row());
-    kb.text("‹ Back", "sessions");
-    await ctx.reply(`🔍 ${hits.length} result(s)`, { parse_mode: "HTML", reply_markup: kb });
+    kb.text("Back", "sessions");
+    await ctx.reply(`${hits.length} result(s)`, { parse_mode: "HTML", reply_markup: kb });
   }
 
   function openSession(
@@ -163,7 +163,6 @@ export function createBot(
     const id = ctx.from?.id;
     if (id !== undefined) knownChatIds.add(id);
     if (!ALLOW_ALL && (id === undefined || !allowed.has(id))) {
-      await ctx.reply("⛔️").catch(() => {});
       return;
     }
     await next();
@@ -173,17 +172,17 @@ export function createBot(
   bot.command("start", async (ctx) => {
     const a = active.get(ctx.chat.id);
     const s = a ? store.get(a) : undefined;
-    const lines = ["👋 <b>Telecode</b>"];
+    const lines = ["<b>Telecode</b>"];
     if (s) {
-      lines.push(`🎯 <b>${escapeHtml(sessionTitle(s))}</b>`);
-      if (s.model) lines.push(`🧠 ${escapeHtml(shortModel(s.model))}`);
-      if (s.directory) lines.push(`📁 <code>${escapeHtml(s.directory)}</code>`);
+      lines.push(`Active: <b>${escapeHtml(sessionTitle(s))}</b>`);
+      if (s.model) lines.push(escapeHtml(shortModel(s.model)));
+      if (s.directory) lines.push(`<code>${escapeHtml(s.directory)}</code>`);
     } else {
       lines.push("No active session.");
     }
     await ctx.reply(lines.join("\n"), {
       parse_mode: "HTML",
-      reply_markup: new InlineKeyboard().text("📂 Sessions", "sessions").text("➕ New", "new"),
+      reply_markup: new InlineKeyboard().text("Sessions", "sessions").text("New", "new"),
     });
   });
 
@@ -191,7 +190,7 @@ export function createBot(
   bot.command("new", (ctx) => newSession(ctx));
   bot.command("leave", (ctx) => {
     active.delete(ctx.chat.id);
-    ctx.reply("🚪");
+    ctx.reply("Left.");
   });
 
   // ---- free text -> active session ----
@@ -207,14 +206,14 @@ export function createBot(
     const sid = active.get(ctx.chat.id);
     if (!sid) {
       return ctx.reply("Pick a session:", {
-        reply_markup: new InlineKeyboard().text("📂 Sessions", "sessions"),
+        reply_markup: new InlineKeyboard().text("Sessions", "sessions"),
       });
     }
     const s = store.get(sid);
     if (!s) return ctx.reply(err(new Error("session not found")));
     store.addMessage(sid, { role: "user", content: text });
     store.addPending(sid, text);
-    await ctx.reply(`📨 <b>Queued</b> — the agent will respond here.\n<code>${escapeHtml(truncate(sessionTitle(s), 30))}</code>`, HTML);
+    await ctx.reply("Queued.", HTML);
   });
 
   // ---- inline callbacks ----
@@ -230,13 +229,13 @@ export function createBot(
     const u = ui.get(ctx.chat.id) ?? { sessions: [], page: 0, searching: false };
     u.searching = true;
     ui.set(ctx.chat.id, u);
-    await ctx.reply("🔍 Search:");
+    await ctx.reply("Search:");
   });
 
   bot.callbackQuery("new", (ctx) => newSession(ctx));
   bot.callbackQuery("leave", (ctx) => {
     active.delete(ctx.chat.id);
-    ctx.reply("🚪");
+    ctx.reply("Left.");
   });
 
   bot.callbackQuery(/^open:(.+)$/, (ctx) => openSession(ctx, ctx.match[1], { edit: true }));
@@ -248,11 +247,11 @@ export function createBot(
     const msgs = s.messages.slice(-24);
     const blocks: { html: string }[] = [];
     for (const m of msgs) {
-      const who = m.role === "user" ? "👤 You" : m.role === "assistant" ? "🤖 Assistant" : `🛠 ${m.role}`;
+      const who = m.role === "user" ? "You" : m.role === "assistant" ? "Assistant" : m.role;
       blocks.push({ html: `<b>${escapeHtml(who)}</b>` });
       blocks.push(...textToBlocks(m.content));
     }
-    if (!blocks.length) return ctx.reply("_(empty)_", HTML);
+    if (!blocks.length) return ctx.reply("(empty)", HTML);
     await sendBlocks(ctx, blocks);
   });
 
@@ -260,7 +259,7 @@ export function createBot(
     const id = ctx.match[1];
     try {
       store.update(id, (s) => (s.interrupted = true));
-      await ctx.reply("⏹");
+      await ctx.reply("Interrupted.");
     } catch (e) {
       await ctx.reply(err(e), HTML);
     }
@@ -270,7 +269,7 @@ export function createBot(
     const id = ctx.match[1];
     try {
       store.update(id, (s) => (s.compactRequested = true));
-      await ctx.reply("🧹");
+      await ctx.reply("Compacted.");
     } catch (e) {
       await ctx.reply(err(e), HTML);
     }
@@ -278,15 +277,15 @@ export function createBot(
 
   bot.callbackQuery(/^delete:(.+)$/, async (ctx) => {
     const id = ctx.match[1];
-    const kb = new InlineKeyboard().text("⚠️ Delete", `deleteok:${id}`).text("Cancel", `refresh:${id}`);
-    await ctx.reply("🗑 Delete this session?", { reply_markup: kb });
+    const kb = new InlineKeyboard().text("Delete", `deleteok:${id}`).text("Cancel", `refresh:${id}`);
+    await ctx.reply("Delete this session?", { reply_markup: kb });
   });
 
   bot.callbackQuery(/^deleteok:(.+)$/, async (ctx) => {
     const id = ctx.match[1];
     store.remove(id);
     if (active.get(ctx.chat.id) === id) active.delete(ctx.chat.id);
-    await ctx.reply("🗑");
+    await ctx.reply("Deleted.");
   });
 
   bot.callbackQuery(/^export:(.+)$/, async (ctx) => {
@@ -301,15 +300,15 @@ export function createBot(
     const id = ctx.match[1];
     const s = store.get(id);
     if (!s) return ctx.reply(err(new Error("session not found")));
-    if (!models.length) return ctx.reply("No models configured. Set TELECODE_MODELS.", HTML);
+    if (!models.length) return ctx.reply("No models configured.", HTML);
     pendingModel.set(ctx.chat.id, { sessionId: id, items: models });
     const kb = new InlineKeyboard();
     models.slice(0, 30).forEach((m, i) => {
       const isCur = s.model === m;
-      kb.text(truncate(`${isCur ? "✅ " : ""}${m}`, 50), `pick:${i}`).row();
+      kb.text(truncate(`${isCur ? "* " : ""}${m}`, 50), `pick:${i}`).row();
     });
-    kb.text("‹ Back", `refresh:${id}`);
-    await ctx.reply("🔀 Model", { parse_mode: "HTML", reply_markup: kb });
+    kb.text("Back", `refresh:${id}`);
+    await ctx.reply("Model", { parse_mode: "HTML", reply_markup: kb });
   });
 
   bot.callbackQuery(/^pick:(\d+)$/, async (ctx) => {
@@ -319,7 +318,7 @@ export function createBot(
     if (!m) return;
     try {
       store.update(p.sessionId, (s) => (s.model = m));
-      await ctx.reply(`🔀 ${escapeHtml(m)}`, HTML);
+      await ctx.reply(`Model: ${escapeHtml(m)}`, HTML);
     } catch (e) {
       await ctx.reply(err(e), HTML);
     }

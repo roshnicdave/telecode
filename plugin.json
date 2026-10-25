@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "telecode",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Control your coding agent sessions from Telegram. A portable MCP server plus a skill, packaged as an Agent Plugins 1.0.0 plugin.",
   "author": {
     "name": "roshnicdave",
