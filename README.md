@@ -8,36 +8,15 @@ when OpenCode is, and there's no separate process or HTTP hop.
 - Open a session and just type to chat with it
 - View history, interrupt, compact, switch model/agent, export, delete, new
 
-## How it works
+## Install
 
-OpenCode loads this plugin into its background service. The plugin starts a
-Telegram bot (grammY, long polling) and talks to your sessions directly through
-the in-process plugin API — no public URL, no webhook, no extra server.
-
-Lifecycle follows OpenCode: when the service starts, the bot starts; when it
-stops, the bot stops. (Keep the Mac awake — if it sleeps, everything pauses.)
-
-## Requirements
-
-- [OpenCode](https://opencode.ai) installed
-- A Telegram bot token from [@BotFather](https://t.me/BotFather)
-
-## Setup
-
-```sh
-git clone https://github.com/<you>/telecode
-cd telecode
-npm install
-```
-
-Add it to your OpenCode config (`~/.config/opencode/opencode.json`, or
-`opencode.json` in a project) with your token:
+Add it to `opencode.json` (global or project):
 
 ```jsonc
 {
   "plugins": [
     {
-      "package": "/path/to/telecode",
+      "package": "opencode-telecode",
       "options": {
         "token": "1234567890:AA-your-token",
         "allowedIds": "8010764520"   // optional: your Telegram user ID(s), comma-separated
@@ -47,18 +26,22 @@ Add it to your OpenCode config (`~/.config/opencode/opencode.json`, or
 }
 ```
 
+Or from a checkout:
+
+```jsonc
+{ "plugins": [{ "package": "/path/to/telecode", "options": { "token": "..." } }] }
+```
+
 `token` can also come from the `TELEGRAM_BOT_TOKEN` environment variable.
 `allowedIds` (or `TELEGRAM_ALLOWED_IDS`) locks the bot to your account — set it,
 because the bot can run prompts and shell commands. Find your numeric ID from
 [@userinfobot](https://t.me/userinfobot).
 
-Reload OpenCode to pick up the plugin:
+Reload to pick up the plugin:
 
 ```sh
 opencode api post /api/location/reload
 ```
-
-(or restart `opencode`).
 
 ## Usage
 
@@ -68,6 +51,23 @@ opencode api post /api/location/reload
 - With a session open, **just type** to send it a message.
 - Session buttons: **View / Interrupt / Compact / Model / Agent / Export / Delete**
 - `/leave` — close the active session
+
+## Development
+
+```sh
+npm install
+```
+
+A Telegram bot token from [@BotFather](https://t.me/BotFather) is required. The
+plugin is a single `setup` entrypoint (`index.ts`) plus the grammY bot
+(`src/bot.js`) and formatting helpers (`src/format.js`). It talks to sessions
+through the in-process plugin API — no HTTP client.
+
+## Publish
+
+```sh
+npm publish
+```
 
 ## Project layout
 
