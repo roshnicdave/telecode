@@ -1,21 +1,30 @@
 {
-  "name": "opencode-telecode",
+  "name": "telecode",
   "version": "1.0.0",
+  "description": "Control your coding agent sessions from Telegram. Ships as an Agent Plugins 1.0.0 package: a portable MCP server plus a skill.",
   "type": "module",
-  "description": "Control your OpenCode sessions from Telegram",
   "license": "MIT",
-  "keywords": ["opencode", "plugin", "telegram", "bot"],
-  "main": "index.ts",
-  "exports": "./index.ts",
-  "files": ["index.ts", "src", "README.md"],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/roshnicdave/telecode"
+  "bin": {
+    "telecode": "dist/index.cjs"
   },
-  "peerDependencies": {
-    "@opencode/plugin": ">=2.0.0"
+  "files": [
+    "dist",
+    "skills",
+    "plugin.json",
+    "mcp.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --format=cjs --target=node18 --outfile=dist/index.cjs",
+    "start": "node dist/index.cjs"
   },
   "dependencies": {
-    "grammy": "^1.30.0"
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "grammy": "^1.46.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "typescript": "^5.7.2"
   }
 }

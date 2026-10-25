@@ -1,13 +1,13 @@
-// Markdown-ish text → Telegram HTML, plus chunking helpers.
+// Markdown-ish text -> Telegram HTML, plus chunking helpers (ported from telecode).
 
-export function escapeHtml(s) {
+export function escapeHtml(s: unknown): string {
   return String(s ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 }
 
-export function relTime(ms) {
+export function relTime(ms?: number): string {
   if (!ms) return "—";
   const diff = Date.now() - ms;
   if (diff < 0) return "now";
@@ -21,31 +21,30 @@ export function relTime(ms) {
   return `${d}d ago`;
 }
 
-function inlineFormat(text) {
+export function truncate(s: string, n: number): string {
+  return s.length <= n ? s : s.slice(0, n - 1) + "…";
+}
+
+function inlineFormat(text: string): string {
   let s = escapeHtml(text);
-  // inline code
   s = s.replace(/`([^`\n]+)`/g, (_, c) => `<code>${c}</code>`);
-  // bold
   s = s.replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>");
-  // bare URLs → links
   s = s.replace(/(https?:\/\/[^\s<>"']+)/g, '<a href="$1">$1</a>');
   return s;
 }
 
-function pushText(blocks, text) {
+function pushText(blocks: { html: string }[], text: string): void {
   for (const para of text.split(/\n{2,}/)) {
     const p = para.trim();
     if (p) blocks.push({ html: inlineFormat(p) });
   }
 }
 
-// Convert markdown-ish text into an array of HTML blocks:
-// normal paragraphs and <pre><code> fenced code blocks.
-export function textToBlocks(text) {
-  const blocks = [];
+export function textToBlocks(text: string): { html: string }[] {
+  const blocks: { html: string }[] = [];
   const fence = /```([^\n`]*)\n?([\s\S]*?)(?:```|$)/g;
   let last = 0;
-  let m;
+  let m: RegExpExecArray | null;
   while ((m = fence.exec(text)) !== null) {
     if (m.index > last) pushText(blocks, text.slice(last, m.index));
     const lang = (m[1] || "").trim();
@@ -58,10 +57,8 @@ export function textToBlocks(text) {
   return blocks;
 }
 
-// Pack blocks into Telegram-sized chunks (≤ limit chars) without splitting a
-// block when possible; oversized blocks are hard-split on newlines.
-export function packBlocks(blocks, limit = 4000) {
-  const chunks = [];
+export function packBlocks(blocks: { html: string }[], limit = 4000): string[] {
+  const chunks: string[] = [];
   let cur = "";
   for (const b of blocks) {
     const html = b.html;
@@ -85,8 +82,8 @@ export function packBlocks(blocks, limit = 4000) {
   return chunks;
 }
 
-function hardSplit(html, limit) {
-  const out = [];
+function hardSplit(html: string, limit: number): string[] {
+  const out: string[] = [];
   let cur = "";
   for (const line of html.split("\n")) {
     const piece = line + "\n";
