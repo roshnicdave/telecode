@@ -45,6 +45,12 @@ tools below.
    If they pressed 🧹 Compact, summarize and keep recent context.
 5. Keep the store's session state consistent with whatever the host actually did.
 
+## Pi auto-injection
+
+In Pi, the `telecode-autopoll` extension injects queued Telegram prompts as user
+messages prefixed with `[Telegram]`. Treat a `[Telegram]` message as a pending
+prompt: process it and reply with `complete_response` + `send_telegram`.
+
 ## Notes
 
 - The Telegram bot queues prompts into the store; it does not generate answers.

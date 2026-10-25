@@ -94,7 +94,7 @@ server and set the two env vars:
 - **Claude Code**: `claude mcp add telecode --env TELEGRAM_BOT_TOKEN=… --env TELEGRAM_ALLOWED_IDS=… -- node /path/to/dist/index.cjs`
 - **Cursor**: add the JSON above to `.cursor/mcp.json`
 - **VS Code**: add the JSON above to `.vscode/mcp.json`
-- **Pi**: add the JSON above to `~/.pi/agent/mcp.json`
+- **Pi**: add the JSON above to `~/.pi/agent/mcp.json`. For seamless phone → agent turns (no manual polling), also copy `extras/pi/telecode-autopoll.ts` into `~/.pi/agent/extensions/` — it injects queued Telegram prompts as real user messages so the agent answers immediately.
 
 ## Development
 
