@@ -49,9 +49,9 @@ try {
 
   console.log("== opencode.js (read-only) ==");
   await test("listSessions", async () => {
-    const s = await oc.listSessions({ limit: 5 });
-    assert.ok(Array.isArray(s));
-    console.log(`      ${s.length} session(s) visible`);
+    const { data } = await oc.listSessions({ limit: 5 });
+    assert.ok(Array.isArray(data));
+    console.log(`      ${data.length} session(s) visible`);
   });
   await test("listModels / listAgents", async () => {
     const models = await oc.listModels();
@@ -140,12 +140,10 @@ try {
   await test("setMyCommands / getMyCommands", async () => {
     const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN);
     const cmds = [
-      { command: "start", description: "Overview + quick actions" },
+      { command: "start", description: "Home" },
       { command: "sessions", description: "List sessions" },
-      { command: "new", description: "Create a new session" },
-      { command: "help", description: "How to use" },
-      { command: "id", description: "Show your Telegram user ID" },
-      { command: "leave", description: "Leave the active session" },
+      { command: "new", description: "New session" },
+      { command: "leave", description: "Leave active session" },
     ];
     await bot.api.setMyCommands(cmds);
     const got = await bot.api.getMyCommands();

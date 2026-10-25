@@ -26,11 +26,9 @@ npm install
 cp .env.example .env   # then edit .env and paste your bot token
 ```
 
-Optional but recommended — lock the bot to your account:
-
-1. `npm start`, then message your bot and send `/id`.
-2. Put that number into `TELEGRAM_ALLOWED_IDS` in `.env`.
-3. Restart.
+Optional but recommended — lock the bot to your account: put your numeric
+Telegram user ID (e.g. from [@userinfobot](https://t.me/userinfobot)) into
+`TELEGRAM_ALLOWED_IDS` in `.env`.
 
 ## Run
 
@@ -69,13 +67,12 @@ launchctl load ~/Library/LaunchAgents/com.telecode.plist
 
 ## Usage
 
-- `/start` — overview
-- `/sessions` — list sessions; tap one to open it
-- `/new [dir]` — create a session (optionally in a directory)
-- When a session is open, **just type** to send it a message.
-- Buttons under a session: **View / Interrupt / Compact / Model / Agent / Export / Delete**
-- `/leave` — stop chatting with the active session
-- `/id` — show your Telegram user ID (for the allowlist)
+- `/start` — home
+- `/sessions` — list sessions (5 at a time, **Load more** to page, **Search** to filter)
+- `/new` — create a session
+- With a session open, **just type** to send it a message.
+- Session buttons: **View / Interrupt / Compact / Model / Agent / Export / Delete**
+- `/leave` — close the active session
 
 ## Test
 

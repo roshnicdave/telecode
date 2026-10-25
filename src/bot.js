@@ -41,13 +41,14 @@ function setChat(id, patch) {
   save();
 }
 
+const ui = new Map(); // chatId -> { sessions, nextCursor, searching }
 const pending = new Map(); // chatId -> { kind: "model" | "agent", sessionId, items }
 
 const bot = new Bot(token);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const truncate = (s, n) => (s.length <= n ? s : s.slice(0, n - 1) + "…");
 
-// ---------- small helpers ----------
+// ---------- helpers ----------
 function sessionTitle(s) {
   if (s.title) return s.title;
   const dir = s.location?.directory;
@@ -59,15 +60,16 @@ function sessionModel(s) {
   if (!m) return "default";
   return m.variant ? `${m.providerID}/${m.id}#${m.variant}` : `${m.providerID}/${m.id}`;
 }
+function sessionLabel(s, i) {
+  return `${i + 1}. ${truncate(sessionTitle(s), 40)} · ${relTime(s.time?.updated)}`;
+}
 
 function panelText(s) {
   const lines = [`🗂 <b>${escapeHtml(sessionTitle(s))}</b>`];
   if (s.location?.directory) lines.push(`📁 <code>${escapeHtml(s.location.directory)}</code>`);
   lines.push(`🧠 ${escapeHtml(sessionModel(s))}`);
   if (s.agent) lines.push(`🤖 ${escapeHtml(s.agent)}`);
-  lines.push(`💵 $${Number(s.cost ?? 0).toFixed(4)}`);
   if (s.time?.updated) lines.push(`🕐 ${escapeHtml(relTime(s.time.updated))}`);
-  lines.push("", "💬 Type a message to send it to this session.");
   return lines.join("\n");
 }
 
@@ -123,39 +125,58 @@ async function sendBlocks(ctx, blocks, { editMessageId } = {}) {
   }
 }
 
-// ---------- session list ----------
-async function showSessions(ctx, edit) {
+// ---------- session list (buttons only) ----------
+async function showSessions(ctx, { edit = false, append = false } = {}) {
   if (ctx.callbackQuery) await ctx.answerCallbackQuery().catch(() => {});
-  let sessions;
+  const u = ui.get(ctx.chat.id) ?? { sessions: [], nextCursor: null, searching: false };
+  u.searching = false;
   try {
-    sessions = await oc.listSessions({ limit: 12 });
+    const page =
+      append && u.nextCursor
+        ? await oc.listSessions({ limit: 5, cursor: u.nextCursor })
+        : await oc.listSessions({ limit: 5 });
+    u.sessions = append ? u.sessions.concat(page.data) : page.data;
+    u.nextCursor = page.cursor?.next ?? null;
   } catch (e) {
     await ctx.reply(`❌ <code>${escapeHtml(String(e.message))}</code>`, { parse_mode: "HTML" });
     return;
   }
-  if (!sessions.length) {
-    const txt = "No sessions yet. Create one with /new.";
+  ui.set(ctx.chat.id, u);
+
+  if (!u.sessions.length) {
+    const txt = "No sessions yet.";
     if (edit) await ctx.editMessageText(txt).catch(() => {});
     else await ctx.reply(txt);
     return;
   }
-  const kb = new InlineKeyboard();
-  sessions.forEach((s, i) => {
-    kb.text(`${i + 1}. ${truncate(sessionTitle(s), 30)}`, `open:${s.id}`).row();
-  });
-  kb.text("➕ New", "new").text("🔁 Refresh", "sessions").row();
 
-  const lines = [`🗂 <b>Sessions</b> (${sessions.length})`, ""];
-  sessions.forEach((s, i) => {
-    lines.push(`${i + 1}. <b>${escapeHtml(sessionTitle(s))}</b> · ${escapeHtml(sessionModel(s))}`);
-    lines.push(
-      `    <code>${escapeHtml(s.location?.directory ?? "—")}</code> · ${escapeHtml(relTime(s.time?.updated))}`,
-    );
-  });
-  const text = truncate(lines.join("\n"), 3800);
+  const kb = new InlineKeyboard();
+  u.sessions.forEach((s, i) => kb.text(sessionLabel(s, i), `open:${s.id}`).row());
+  kb.text("🔍 Search", "search").text("➕ New", "new").row();
+  kb.text(u.nextCursor ? "⬇️ Load more" : "🔁 Refresh", u.nextCursor ? "loadmore" : "sessions");
+
+  const text = `🗂 <b>Sessions</b> (${u.sessions.length})`;
   const opts = { parse_mode: "HTML", reply_markup: kb };
   if (edit) await ctx.editMessageText(text, opts).catch(async () => ctx.reply(text, opts));
   else await ctx.reply(text, opts);
+}
+
+async function searchSessions(ctx, query) {
+  let page;
+  try {
+    page = await oc.listSessions({ limit: 10, search: query });
+  } catch (e) {
+    await ctx.reply(`❌ <code>${escapeHtml(String(e.message))}</code>`, { parse_mode: "HTML" });
+    return;
+  }
+  if (!page.data.length) {
+    await ctx.reply("No matches.");
+    return;
+  }
+  const kb = new InlineKeyboard();
+  page.data.forEach((s, i) => kb.text(sessionLabel(s, i), `open:${s.id}`).row());
+  kb.text("‹ Back", "sessions");
+  await ctx.reply(`🔍 ${page.data.length} result(s)`, { parse_mode: "HTML", reply_markup: kb });
 }
 
 // ---------- send a prompt and wait for the reply ----------
@@ -222,10 +243,10 @@ async function handlePrompt(ctx, sessionId, text) {
     const tools = (result.content ?? []).filter((c) => c.type === "tool");
     if (text) blocks.push(...textToBlocks(text));
     else if (tools.length) blocks.push({ html: `<i>🛠 Ran ${tools.length} tool call(s)</i>` });
-    else blocks.push({ html: "✅ <i>Done (no text output)</i>" });
+    else blocks.push({ html: "✅ <i>Done</i>" });
     if (result.error) blocks.push({ html: `<b>⚠️ ${escapeHtml(String(result.error?.message ?? result.error))}</b>` });
   } else {
-    blocks.push({ html: "⏱ <i>Timed out waiting for a reply — check the session in OpenCode.</i>" });
+    blocks.push({ html: "⏱ <i>Timed out</i>" });
   }
   await sendBlocks(ctx, blocks, { editMessageId: placeholder.message_id });
 }
@@ -233,7 +254,7 @@ async function handlePrompt(ctx, sessionId, text) {
 // ---------- auth gate ----------
 bot.use(async (ctx, next) => {
   if (!ALLOW_ALL && !allowed.has(ctx.from?.id)) {
-    await ctx.reply("⛔️ This bot is private.").catch(() => {});
+    await ctx.reply("⛔️").catch(() => {});
     return;
   }
   await next();
@@ -242,20 +263,12 @@ bot.use(async (ctx, next) => {
 // ---------- commands ----------
 bot.command("start", async (ctx) => {
   const chat = getChat(ctx.chat.id);
-  const kb = new InlineKeyboard()
-    .text("📂 Sessions", "sessions")
-    .text("➕ New", "new")
-    .row()
-    .text("ℹ️ Help", "help")
-    .text("🪪 My ID", "id");
-  const active = chat.sessionId ? `\n\n🎯 <b>Active:</b> ${escapeHtml(chat.title || chat.sessionId)}` : "";
-  await ctx.reply(
-    `👋 <b>OpenCode on Telegram</b>\n\nControl your OpenCode sessions from anywhere.\n\n• Pick a session, then just <b>type</b> to chat with it.\n• View, interrupt, compact, switch model/agent, export — all one tap.${active}`,
-    { parse_mode: "HTML", reply_markup: kb },
-  );
+  const kb = new InlineKeyboard().text("📂 Sessions", "sessions").text("➕ New", "new");
+  const active = chat.sessionId ? `\n🎯 <b>${escapeHtml(chat.title || chat.sessionId)}</b>` : "";
+  await ctx.reply(`👋 <b>Telecode</b>${active}`, { parse_mode: "HTML", reply_markup: kb });
 });
 
-bot.command("sessions", (ctx) => showSessions(ctx, false));
+bot.command("sessions", (ctx) => showSessions(ctx));
 
 bot.command("new", async (ctx) => {
   const dir = ctx.message.text.replace(/^\/new(?:@\w+)?\s*/, "").trim();
@@ -270,31 +283,23 @@ bot.command("new", async (ctx) => {
 
 bot.command("leave", (ctx) => {
   setChat(ctx.chat.id, { sessionId: null });
-  ctx.reply("🚪 Left the active session.");
+  ctx.reply("🚪");
 });
 
-bot.command("id", (ctx) =>
-  ctx.reply(
-    `🪪 Your Telegram user ID: <code>${ctx.from.id}</code>\n\nAdd it to <code>TELEGRAM_ALLOWED_IDS</code> in <code>.env</code> to lock the bot to you.`,
-    { parse_mode: "HTML" },
-  ),
-);
-
-bot.command("help", (ctx) =>
-  ctx.reply(
-    `<b>Commands</b>\n/sessions — list sessions\n/new [dir] — new session\n/leave — leave active session\n/id — your Telegram ID\n\n<b>When a session is active</b>, just type to send it a message. Use the buttons under a session for View / Interrupt / Compact / Model / Agent / Export / Delete.`,
-    { parse_mode: "HTML" },
-  ),
-);
-
-// ---------- free text → active session ----------
+// ---------- free text → active session (or search) ----------
 bot.on("message:text", async (ctx) => {
   const text = ctx.message.text;
   if (text.startsWith("/")) return;
+  const u = ui.get(ctx.chat.id);
+  if (u?.searching) {
+    u.searching = false;
+    ui.set(ctx.chat.id, u);
+    await searchSessions(ctx, text);
+    return;
+  }
   const chat = getChat(ctx.chat.id);
   if (!chat.sessionId) {
-    await ctx.reply("You're not in a session yet. Tap 📂 <b>Sessions</b> or use /new.", {
-      parse_mode: "HTML",
+    await ctx.reply("Pick a session:", {
       reply_markup: new InlineKeyboard().text("📂 Sessions", "sessions"),
     });
     return;
@@ -303,7 +308,17 @@ bot.on("message:text", async (ctx) => {
 });
 
 // ---------- inline callbacks ----------
-bot.callbackQuery("sessions", (ctx) => showSessions(ctx, true));
+bot.callbackQuery("sessions", (ctx) => showSessions(ctx, { edit: true }));
+
+bot.callbackQuery("loadmore", (ctx) => showSessions(ctx, { edit: true, append: true }));
+
+bot.callbackQuery("search", async (ctx) => {
+  await ctx.answerCallbackQuery().catch(() => {});
+  const u = ui.get(ctx.chat.id) ?? { sessions: [], nextCursor: null, searching: false };
+  u.searching = true;
+  ui.set(ctx.chat.id, u);
+  await ctx.reply("🔍 Search:");
+});
 
 bot.callbackQuery("new", async (ctx) => {
   await ctx.answerCallbackQuery().catch(() => {});
@@ -319,20 +334,7 @@ bot.callbackQuery("new", async (ctx) => {
 bot.callbackQuery("leave", async (ctx) => {
   await ctx.answerCallbackQuery().catch(() => {});
   setChat(ctx.chat.id, { sessionId: null });
-  await ctx.reply("🚪 Left the active session.");
-});
-
-bot.callbackQuery("help", async (ctx) => {
-  await ctx.answerCallbackQuery().catch(() => {});
-  await ctx.reply(
-    `<b>How to use</b>\n\n1. Tap 📂 Sessions and pick one.\n2. Just type your message — it goes straight to that session.\n3. Use the buttons for View / Interrupt / Compact / Model / Agent / Export / Delete.`,
-    { parse_mode: "HTML" },
-  );
-});
-
-bot.callbackQuery("id", async (ctx) => {
-  await ctx.answerCallbackQuery().catch(() => {});
-  await ctx.reply(`🪪 Your Telegram user ID: <code>${ctx.from.id}</code>`, { parse_mode: "HTML" });
+  await ctx.reply("🚪");
 });
 
 bot.callbackQuery(/^open:(.+)$/, async (ctx) => {
@@ -375,7 +377,7 @@ bot.callbackQuery(/^view:(.+)$/, async (ctx) => {
     const blocks = [];
     for (const m of [...msgs].reverse()) blocks.push(...messageToBlocks(m));
     if (!blocks.length) {
-      await ctx.reply("_(empty session)_", { parse_mode: "HTML" });
+      await ctx.reply("_(empty)_", { parse_mode: "HTML" });
       return;
     }
     await sendBlocks(ctx, blocks);
@@ -389,7 +391,7 @@ bot.callbackQuery(/^interrupt:(.+)$/, async (ctx) => {
   await ctx.answerCallbackQuery().catch(() => {});
   try {
     const r = await oc.interrupt(id);
-    await ctx.reply(r?.interrupted ? "⏹ Interrupted." : "⏹ Nothing running.");
+    await ctx.reply(r?.interrupted ? "⏹" : "⏹");
   } catch (e) {
     await ctx.reply(`❌ <code>${escapeHtml(String(e.message))}</code>`, { parse_mode: "HTML" });
   }
@@ -400,7 +402,7 @@ bot.callbackQuery(/^compact:(.+)$/, async (ctx) => {
   await ctx.answerCallbackQuery().catch(() => {});
   try {
     await oc.compact(id);
-    await ctx.reply("🧹 Compacted.");
+    await ctx.reply("🧹");
   } catch (e) {
     await ctx.reply(`❌ <code>${escapeHtml(String(e.message))}</code>`, { parse_mode: "HTML" });
   }
@@ -409,8 +411,8 @@ bot.callbackQuery(/^compact:(.+)$/, async (ctx) => {
 bot.callbackQuery(/^delete:(.+)$/, async (ctx) => {
   const id = ctx.match[1];
   await ctx.answerCallbackQuery().catch(() => {});
-  const kb = new InlineKeyboard().text("⚠️ Yes, delete", `deleteok:${id}`).text("Cancel", `refresh:${id}`);
-  await ctx.reply("🗑 Delete this session? This cannot be undone.", { reply_markup: kb });
+  const kb = new InlineKeyboard().text("⚠️ Delete", `deleteok:${id}`).text("Cancel", `refresh:${id}`);
+  await ctx.reply("🗑 Delete this session?", { reply_markup: kb });
 });
 
 bot.callbackQuery(/^deleteok:(.+)$/, async (ctx) => {
@@ -419,7 +421,7 @@ bot.callbackQuery(/^deleteok:(.+)$/, async (ctx) => {
   try {
     await oc.removeSession(id);
     if (getChat(ctx.chat.id).sessionId === id) setChat(ctx.chat.id, { sessionId: null });
-    await ctx.reply("🗑 Deleted.");
+    await ctx.reply("🗑");
   } catch (e) {
     await ctx.reply(`❌ <code>${escapeHtml(String(e.message))}</code>`, { parse_mode: "HTML" });
   }
@@ -432,7 +434,7 @@ bot.callbackQuery(/^export:(.+)$/, async (ctx) => {
     const data = await oc.exportSession(id);
     const name = `session-${id}.json`;
     await ctx.replyWithDocument(new InputFile(Buffer.from(JSON.stringify(data, null, 2), "utf8"), name), {
-      caption: `⬇️ ${name}`,
+      caption: name,
     });
   } catch (e) {
     await ctx.reply(`❌ <code>${escapeHtml(String(e.message))}</code>`, { parse_mode: "HTML" });
@@ -453,7 +455,7 @@ bot.callbackQuery(/^model:(.+)$/, async (ctx) => {
       kb.text(truncate(`${mark}${m.name ?? `${m.providerID}/${m.id}`}`, 50), `pick:${i}`).row();
     }
     kb.text("‹ Back", `refresh:${id}`);
-    await ctx.reply("🔀 <b>Choose a model</b>", { parse_mode: "HTML", reply_markup: kb });
+    await ctx.reply("🔀 Model", { parse_mode: "HTML", reply_markup: kb });
   } catch (e) {
     await ctx.reply(`❌ <code>${escapeHtml(String(e.message))}</code>`, { parse_mode: "HTML" });
   }
@@ -473,7 +475,7 @@ bot.callbackQuery(/^agent:(.+)$/, async (ctx) => {
       kb.text(truncate(`${mark}${a.name ?? a.id}`, 50), `pick:${i}`).row();
     }
     kb.text("‹ Back", `refresh:${id}`);
-    await ctx.reply("🤖 <b>Choose an agent</b>", { parse_mode: "HTML", reply_markup: kb });
+    await ctx.reply("🤖 Agent", { parse_mode: "HTML", reply_markup: kb });
   } catch (e) {
     await ctx.reply(`❌ <code>${escapeHtml(String(e.message))}</code>`, { parse_mode: "HTML" });
   }
@@ -488,11 +490,11 @@ bot.callbackQuery(/^pick:(\d+)$/, async (ctx) => {
     if (p.kind === "model") {
       const m = p.items[idx];
       await oc.switchModel(p.sessionId, { id: m.id, providerID: m.providerID });
-      await ctx.reply(`🔀 Model → <b>${escapeHtml(m.name ?? `${m.providerID}/${m.id}`)}</b>`, { parse_mode: "HTML" });
+      await ctx.reply(`🔀 ${escapeHtml(m.name ?? `${m.providerID}/${m.id}`)}`, { parse_mode: "HTML" });
     } else {
       const a = p.items[idx];
       await oc.switchAgent(p.sessionId, a.id);
-      await ctx.reply(`🤖 Agent → <b>${escapeHtml(a.name ?? a.id)}</b>`, { parse_mode: "HTML" });
+      await ctx.reply(`🤖 ${escapeHtml(a.name ?? a.id)}`, { parse_mode: "HTML" });
     }
     pending.delete(ctx.chat.id);
   } catch (e) {
@@ -507,17 +509,12 @@ bot.catch((err) => {
 
 export async function startBot() {
   await bot.api.setMyCommands([
-    { command: "start", description: "Overview + quick actions" },
+    { command: "start", description: "Home" },
     { command: "sessions", description: "List sessions" },
-    { command: "new", description: "Create a new session" },
-    { command: "help", description: "How to use" },
-    { command: "id", description: "Show your Telegram user ID" },
-    { command: "leave", description: "Leave the active session" },
+    { command: "new", description: "New session" },
+    { command: "leave", description: "Leave active session" },
   ]);
-  console.log("🤖 OpenCode Telegram bot starting…");
-  if (ALLOW_ALL) {
-    console.warn("⚠️  TELEGRAM_ALLOWED_IDS not set — bot is open to anyone who finds it.");
-    console.warn("⚠️  Run /id in the bot, then set TELEGRAM_ALLOWED_IDS=<your id> in .env and restart.");
-  }
+  console.log("🤖 Telecode starting…");
+  if (ALLOW_ALL) console.warn("⚠️ TELEGRAM_ALLOWED_IDS not set — bot is open to anyone.");
   await bot.start();
 }

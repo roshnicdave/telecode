@@ -54,8 +54,12 @@ export async function request(method, path, opts = {}) {
 
 export const listSessions = (q = {}) =>
   request("GET", "/api/session", {
-    query: { order: "desc", limit: q.limit ?? 30, ...(q.search ? { search: q.search } : {}) },
-  }).then((r) => r.data);
+    query: {
+      limit: q.limit ?? 30,
+      ...(q.search ? { search: q.search } : {}),
+      ...(q.cursor ? { cursor: q.cursor } : { order: "desc" }),
+    },
+  });
 
 export const getSession = (id) => request("GET", `/api/session/${id}`).then((r) => r.data);
 
