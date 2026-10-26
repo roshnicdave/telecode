@@ -1,55 +1,36 @@
 # telecode
 
-Control your running [Pi coding agent](https://github.com/earendil-works/pi) sessions from Telegram.
+Control local [OpenCode](https://opencode.ai/) sessions from a private Telegram bot.
 
-Telecode is one Pi extension. It runs locally, registers each live Pi session, and lets one private Telegram bot route messages to the session you choose. Pi's completed response is returned automatically; the model does not need to call a tool.
+Telecode is intentionally a thin client. OpenCode owns sessions, tools, model credentials, and history; Telecode only selects a workspace/session/model and forwards messages through OpenCode's documented HTTP API. There is no terminal scraping, tmux, heartbeat registry, or per-session daemon.
 
-## Install
+## Requirements
 
-```sh
-pi install npm:@roshnicdave/telecode
-```
+- OpenCode 1.19.4
+- Node.js 22 or newer
+- A Telegram bot token and your numeric Telegram user ID
 
-For local development:
+Install dependencies with `npm install`. Store the bot token in `~/.telecode/telegram-token` and allowed numeric IDs in `~/.telecode/telegram-allowed-ids`, both mode `0600`.
 
-```sh
-git clone https://github.com/roshnicdave/telecode.git ~/telecode
-cd ~/telecode && npm install
-pi install ~/telecode
-```
+Start the authenticated OpenCode server with `./scripts/run-opencode-server.sh` and the bot with `./scripts/run-telecode.sh`. The included macOS launch agents run both automatically; they expect this checkout at `/Users/rd/telecode` and use `/Users/rd/ripster-system` as the default workspace.
 
-## Configure
+## Telegram commands
 
-Set the bot token and your numeric Telegram user ID:
-
-```sh
-mkdir -p ~/.pi/agent
-printf '%s\n' 'YOUR_BOT_TOKEN' > ~/.pi/agent/.telegram_token
-printf '%s\n' 'YOUR_TELEGRAM_USER_ID' > ~/.pi/agent/.telegram_allowed_ids
-chmod 600 ~/.pi/agent/.telegram_token ~/.pi/agent/.telegram_allowed_ids
-```
-
-Environment variables `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ALLOWED_IDS` override those files. The allowlist is required; Telecode stays off rather than exposing a coding agent to strangers.
-
-Restart Pi after installation. In Telegram:
-
-- `/new <name>` starts a detached Pi session in the selected session's directory and selects it. If nothing is running yet, it starts in your home directory.
-- `/sessions` lists every running Pi session and lets you select one.
-- `/models` shows the selected session's enabled models as buttons and switches it immediately.
-- `/model` shows the selected session's current model.
-- `/status` shows the selected session.
-- `/abort` stops the selected session's current turn.
+- `/new <name>` creates and selects an OpenCode session.
+- `/sessions` selects a session in the current workspace.
+- `/workspace <absolute path>` changes workspace.
+- `/models` chooses among configured OpenCode models.
+- `/model` shows the chosen model.
+- `/status` shows the workspace, session, and model.
+- `/abort` stops the current turn.
 - Any ordinary message is sent to the selected session.
 
-If the selected session is busy, the message is queued as a follow-up. One Pi process polls Telegram at a time; another live session takes over automatically if it exits.
+Access is deny-by-default. Updates from Telegram user IDs outside the allowlist are ignored.
 
-New sessions run inside `tmux`, so they stay alive when no terminal is attached. Use `tmux ls` and `tmux attach -t <session>` on the computer if you want to open one locally. Telecode requires `tmux` only for `/new`; controlling sessions you started yourself does not require it.
+## Migrating from Pi
+
+`node scripts/migrate-from-pi.mjs` copies provider and Telegram credentials into protected OpenCode/Telecode stores without printing their values. Run it again after the OpenCode server starts so credentials are synchronized through the API.
 
 ## Development
 
-```sh
-npm test
-npm run typecheck
-```
-
-Runtime state lives in `~/.telecode/`. Bot credentials remain outside the repository.
+Run `npm test`, `npm run typecheck`, `npm pack --dry-run`, and `git diff --check` before release. Runtime state and logs live in `~/.telecode/`; OpenCode configuration lives in `~/.config/opencode/`; credentials remain outside the repository.
