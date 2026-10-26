@@ -19,7 +19,8 @@ Start the authenticated OpenCode server with `./scripts/run-opencode-server.sh` 
 - `/new <name>` creates and selects an OpenCode session.
 - `/sessions` selects a session in the current workspace.
 - `/workspace <absolute path>` changes workspace.
-- `/models` shows the current model and lets you change it.
+- `/models` chooses among configured OpenCode models.
+- `/model` shows the chosen model.
 - `/status` shows the workspace, session, and model.
 - `/abort` stops the current turn.
 - Any ordinary message is sent to the selected session.

@@ -16,12 +16,6 @@ const TOKEN_FILE = process.env.TELEGRAM_BOT_TOKEN_FILE || join(DATA, "telegram-t
 const IDS_FILE = process.env.TELEGRAM_ALLOWED_IDS_FILE || join(DATA, "telegram-allowed-ids");
 const SERVER_PASSWORD_FILE = process.env.OPENCODE_SERVER_PASSWORD_FILE || join(DATA, "opencode-server-password");
 const DEFAULT_DIRECTORY = process.env.TELECODE_DEFAULT_DIRECTORY || join(HOME, "ripster-system");
-const FAVORITE_MODELS = new Set([
-  "deepseek/deepseek-v4-pro",
-  "evil-qwen/evil-qwen-4b",
-  "cloudflare-workers-ai/@cf/qwen/qwen3.8-27b",
-  "cloudflare-workers-ai/@cf/qwen/qwen2.5-coder-32b-instruct",
-]);
 
 function secret(env: string, file: string): string {
   return process.env[env]?.trim() || readFileSync(file, "utf8").trim();
@@ -63,14 +57,12 @@ async function availableModels(chatID: number): Promise<ModelRef[]> {
   const current = chatState(chatID);
   const result = await client.provider.list({ directory: current.directory }, { throwOnError: true });
   const preferred = new Set(["deepseek", "evil-qwen", "cloudflare-workers-ai"]);
-  const available = result.data.all
+  return result.data.all
     .filter((provider) => result.data.connected.includes(provider.id) || provider.source === "config" || preferred.has(provider.id))
     .flatMap((provider) => Object.values(provider.models).filter((model: Model) => model.status !== "deprecated").map((model: Model) => ({
       providerID: provider.id, modelID: model.id, name: model.name,
     })))
-    .sort((a, b) => a.name.localeCompare(b.name));
-  const favorites = available.filter((model) => FAVORITE_MODELS.has(`${model.providerID}/${model.modelID}`));
-  return favorites.length ? favorites : available;
+    .sort((a, b) => Number(preferred.has(b.providerID)) - Number(preferred.has(a.providerID)) || a.name.localeCompare(b.name));
 }
 
 async function send(chatID: number, text: string): Promise<void> {
@@ -104,7 +96,7 @@ bot.use(async (ctx, next) => { if (authorized(ctx.from?.id)) await next(); });
 bot.command("start", (ctx) => ctx.reply("Telecode is connected to OpenCode. Use /new, /sessions, /models, or send a message."));
 bot.command("help", (ctx) => ctx.reply([
   "/new <name> — create and select a session", "/sessions — select a session in this workspace",
-  "/workspace <path> — switch project directory", "/models — view or change the model",
+  "/workspace <path> — switch project directory", "/models — pick a model", "/model — show the current model",
   "/status — show workspace and session", "/abort — stop the current turn", "", "Any other text goes to the selected OpenCode session.",
 ].join("\n")));
 bot.command("workspace", async (ctx) => {
@@ -151,6 +143,7 @@ bot.callbackQuery(/^m:(\d+)$/, async (ctx) => {
   chatState(ctx.chat!.id).model = model; save(); await ctx.answerCallbackQuery({ text: "Selected" });
   await ctx.editMessageText(`Using: ${modelLabel(model)}`);
 });
+bot.command("model", async (ctx) => { const model = chatState(ctx.chat.id).model; await ctx.reply(model ? modelLabel(model) : "Using the OpenCode default model."); });
 bot.command("status", async (ctx) => { const item = await selected(ctx.chat.id); const current = chatState(ctx.chat.id); await ctx.reply(`Workspace: ${current.directory}\nSession: ${item ? sessionLabel(item) : "none"}\nModel: ${current.model ? modelLabel(current.model) : "OpenCode default"}`); });
 bot.command("abort", async (ctx) => { const item = await selected(ctx.chat.id); if (!item) return void await ctx.reply("No selected session."); await client.session.abort({ sessionID: item.id, directory: item.directory }); await ctx.reply("Abort requested."); });
 bot.on("message:text", (ctx) => { if (!ctx.message.text.startsWith("/")) void prompt(ctx.chat.id, ctx.message.text); });
@@ -159,8 +152,8 @@ bot.catch(({ error }) => console.error("telegram update failed", error));
 await bot.api.setMyCommands([
   { command: "new", description: "Create an OpenCode session" }, { command: "sessions", description: "Select a session" },
   { command: "workspace", description: "Change project directory" }, { command: "models", description: "Choose a model" },
-  { command: "status", description: "Show workspace, session, and model" }, { command: "abort", description: "Stop the current turn" },
-  { command: "help", description: "Show help" },
+  { command: "model", description: "Show the selected model" }, { command: "status", description: "Show current state" },
+  { command: "abort", description: "Stop the current turn" }, { command: "help", description: "Show help" },
 ]);
 const stop = async (): Promise<void> => { await bot.stop().catch(() => {}); };
 process.once("SIGINT", () => void stop()); process.once("SIGTERM", () => void stop());
