@@ -12,16 +12,15 @@ Telecode is intentionally a thin client. OpenCode owns sessions, tools, model cr
 
 Install dependencies with `npm install`. Store the bot token in `~/.telecode/telegram-token` and allowed numeric IDs in `~/.telecode/telegram-allowed-ids`, both mode `0600`.
 
-Start the authenticated OpenCode server with `./scripts/run-opencode-server.sh` and the bot with `./scripts/run-telecode.sh`. The included macOS launch agents run both automatically; they expect this checkout at `/Users/rd/telecode` and use `/Users/rd/ripster-system` as the default workspace.
+Start the authenticated OpenCode server with `./scripts/run-opencode-server.sh` and the bot with `./scripts/run-telecode.sh`. The included macOS launch agents run both automatically; they expect this checkout at `/Users/rd/telecode`. Sessions start in the user's home directory.
 
 ## Telegram commands
 
 - `/new <name>` creates and selects an OpenCode session.
-- `/sessions` selects a session in the current workspace.
-- `/workspace <absolute path>` changes workspace.
+- `/sessions` selects a session.
 - `/models` chooses among configured OpenCode models.
 - `/model` shows the chosen model.
-- `/status` shows the workspace, session, and model.
+- `/status` shows the session and model.
 - `/abort` stops the current turn.
 - Any ordinary message is sent to the selected session.
 

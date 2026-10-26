@@ -1,8 +1,8 @@
-import { existsSync, readFileSync, renameSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, renameSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
 export type ModelRef = { providerID: string; modelID: string; name: string };
-export type ChatState = { directory: string; sessionID?: string; model?: ModelRef };
+export type ChatState = { sessionID?: string; model?: ModelRef };
 export type State = { chats: Record<string, ChatState> };
 
 export function parseAllowedIds(value: string): Set<number> {
@@ -28,11 +28,6 @@ export function normalizeSessionName(value: string): string | undefined {
   const name = value.trim().replace(/\s+/g, " ");
   if (!name || name.length > 80) return undefined;
   return name;
-}
-
-export function resolveWorkspace(value: string, fallback: string): string | undefined {
-  const candidate = value.trim() || fallback;
-  return existsSync(candidate) ? candidate : undefined;
 }
 
 export function visibleText(parts: Array<{ type: string; text?: string }>): string {
